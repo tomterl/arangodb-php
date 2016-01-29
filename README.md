@@ -3,7 +3,7 @@
 # ArangoDB-PHP - A PHP client for ArangoDB
 
 [![Build Status](https://travis-ci.org/arangodb/arangodb-php.png?branch=master)](https://travis-ci.org/arangodb/arangodb-php)
-**Branch: Master (v2.5)**
+**Branch: Master (v2.6)**
 
 [![Build Status](https://travis-ci.org/arangodb/arangodb-php.png?branch=devel)](https://travis-ci.org/arangodb/arangodb-php)
 **Branch: devel**
@@ -29,6 +29,8 @@
  - [Updating a document](#updating_document)
  - [Deleting a document](#deleting_document)
  - [Running an AQL query](#running_aql)
+ - [Exporting data](#exporting_data)
+ - [Bulk document handling](#bulk_documents)
  - [Dropping a collection](#dropping_collection)
  - [Logging exceptions](#logging_exceptions)
  - [Putting it all together](#alltogether)
@@ -42,14 +44,14 @@ Please take a look [here](https://github.com/arangodb/arangodb-php/wiki/Importan
 **[Important versioning information on ArangoDB-PHP](https://github.com/arangodb/arangodb-php/wiki/Important-versioning-information-on-ArangoDB-PHP)**
 
 <br>
-<a name="description"/a>
+<a name="description"></a>
 # Description
 
 This PHP client allows REST-based access to documents on the server.
-The ArangoDocumentHandler class should be used for these purposes.
+The *DocumentHandler* class should be used for these purposes.
 There is an example for REST-based documents access in the file examples/document.php.
 
-Furthermore, the PHP client also allows to issue more AQL complex queries using the ArangoStatement class.
+Furthermore, the PHP client also allows to issue more AQL complex queries using the *Statement* class.
 There is an example for this kind of statements in the file examples/select.php.
 
 To use the PHP client, you must include the file autoloader.php from the main directory.
@@ -57,24 +59,24 @@ The autoloader will care about loading additionally required classes on the fly.
 
 The ArangoDB PHP client is an API that allows you to send and retrieve documents from ArangoDB from out of your PHP application. The client library itself is written in PHP and has no further dependencies but just plain PHP 5.3 (or higher).
 
-The client library provides document and collection classes you can use to work with documents and collections in an OO fashion. When exchanging document data with the server, the library internally will use the [HTTP REST interface of ArangoDB](https://docs.arangodb.com/HttpApi/README.html). The library user does not have to care about this fact as all the details of the REST interface are abstracted by the client library.
+The client library provides document and collection classes you can use to work with documents and collections in an OO fashion. When exchanging document data with the server, the library internally will use the [HTTP REST interface of ArangoDB](https://docs.arangodb.com/HttpApi/index.html). The library user does not have to care about this fact as all the details of the REST interface are abstracted by the client library.
 
 <br>
 
 
 
-<a name="requirements"/a>
+<a name="requirements"></a>
 # Requirements
 
-* ArangoDB database server version 1.4 or higher (detailed info [here](https://github.com/arangodb/arangodb-php/wiki/Important-versioning-information-on-ArangoDB-PHP#arangodb-php-client-to-arangodb-server-interoperability-matrix))
+* ArangoDB database server version 1.4 or higher. Detailed info [here](https://github.com/arangodb/arangodb-php/wiki/Important-versioning-information-on-ArangoDB-PHP#arangodb-php-client-to-arangodb-server-interoperability-matrix)
 
-* PHP version 5.3 or higher (Travis-tested with 5.4, 5.5, 5.6 and hhvm)
+* PHP version 5.3 or higher (Travis-tested with PHP 5.3, 5.4, 5.5, 5.6, 7 and hhvm)
 
 <br>
 
 
 
-<a name="installing"/a>
+<a name="installing"></a>
 ## Installing the PHP client
 
 To get started you need PHP 5.3 or higher plus an ArangoDB server running on any host that you can access.
@@ -84,7 +86,7 @@ There are two alternative ways to get the ArangoDB PHP client:
  * Using packagist/composer
  * Cloning the git repository
 
-<a name="using_packagist"/a>
+<a name="using_packagist"></a>
 ## Alternative 1: Using packagist/composer
 
 When using [packagist](http://packagist.org/), the procedure is as follows:
@@ -162,7 +164,7 @@ You need to include the generated autoloader file in your project when using the
 require 'vendor/.composer/autoload.php';
 ```
 
-<a name="cloning_git"/a>
+<a name="cloning_git"></a>
 ## Alternative 2: Cloning the git repository
 
 When preferring this alternative, you need to have a git client installed. To clone the ArangoDB PHP client repository from github, execute the following command in your project directory:
@@ -180,7 +182,7 @@ require 'arangodb-php/autoload.php';
 
 The ArangoDB PHP client's autoloader will only care about its own class files and will not handle any other files. That means it is fully nestable with other autoloaders.
 
-<a name="invoke_autoloader_directly"/a>
+<a name="invoke_autoloader_directly"></a>
 ## Alternative 3: Invoking the autoloader directly
 
 If you do not wish to include autoload.php to load and setup the autoloader, you can invoke the autoloader directly:
@@ -192,10 +194,10 @@ require 'arangodb-php/lib/triagens/ArangoDb/autoloader.php';
 
 <br>
 
-<a name="howto_use"/a>
+<a name="howto_use"></a>
 # How to use the PHP client
 
-<a name="setting_up_connection_options"/a>
+<a name="setting_up_connection_options"></a>
 ## Setting up the connection options
 
 In order to use ArangoDB, you need to specify the connection options. We do so by creating a PHP array $connectionOptions. Put this code into a file named test.php in your current directory:
@@ -214,6 +216,7 @@ use triagens\ArangoDb\Connection as ArangoConnection;
 use triagens\ArangoDb\ConnectionOptions as ArangoConnectionOptions;
 use triagens\ArangoDb\DocumentHandler as ArangoDocumentHandler;
 use triagens\ArangoDb\Document as ArangoDocument;
+use triagens\ArangoDb\Export as ArangoExport;
 use triagens\ArangoDb\Statement as ArangoStatement;
 use triagens\ArangoDb\Exception as ArangoException;
 use triagens\ArangoDb\ConnectException as ArangoConnectException;
@@ -223,22 +226,24 @@ use triagens\ArangoDb\UpdatePolicy as ArangoUpdatePolicy;
 
 // set up some basic connection options
 $connectionOptions = array(
+    // database name
+    ArangoConnectionOptions::OPTION_DATABASE      => '_system',
     // server endpoint to connect to
-    ArangoConnectionOptions::OPTION_ENDPOINT => 'tcp://127.0.0.1:8529',
+    ArangoConnectionOptions::OPTION_ENDPOINT      => 'tcp://127.0.0.1:8529',
     // authorization type to use (currently supported: 'Basic')
-    ArangoConnectionOptions::OPTION_AUTH_TYPE => 'Basic',
+    ArangoConnectionOptions::OPTION_AUTH_TYPE     => 'Basic',
     // user for basic authorization
-    ArangoConnectionOptions::OPTION_AUTH_USER => 'root',
+    ArangoConnectionOptions::OPTION_AUTH_USER     => 'root',
     // password for basic authorization
-    ArangoConnectionOptions::OPTION_AUTH_PASSWD => '',
+    ArangoConnectionOptions::OPTION_AUTH_PASSWD   => '',
     // connection persistence on server. can use either 'Close' (one-time connections) or 'Keep-Alive' (re-used connections)
-    ArangoConnectionOptions::OPTION_CONNECTION => 'Keep-Alive',
+    ArangoConnectionOptions::OPTION_CONNECTION    => 'Keep-Alive',
     // connect timeout in seconds
-    ArangoConnectionOptions::OPTION_TIMEOUT => 3,
+    ArangoConnectionOptions::OPTION_TIMEOUT       => 3,
     // whether or not to reconnect when a keep-alive connection has timed out on server
-    ArangoConnectionOptions::OPTION_RECONNECT => true,
+    ArangoConnectionOptions::OPTION_RECONNECT     => true,
     // optionally create new collections when inserting documents
-    ArangoConnectionOptions::OPTION_CREATE => true,
+    ArangoConnectionOptions::OPTION_CREATE        => true,
     // optionally create new collections when inserting documents
     ArangoConnectionOptions::OPTION_UPDATE_POLICY => ArangoUpdatePolicy::LAST,
 );
@@ -263,7 +268,7 @@ When updating a document that was previously/concurrently updated by another use
 * fail with a conflict error: if you prefer that, set OPTION_UPDATE_POLICY to conflict
 
 
-<a name="creating_collection"/a>
+<a name="creating_collection"></a>
 ## Creating a collection
 *This is just to show how a collection is created.*
 <br>
@@ -285,7 +290,7 @@ $id = $collectionHandler->add($userCollection);
 var_dump($id);
 ```
 
-<a name="creating_document"/a>
+<a name="creating_document"></a>
 ## Creating a document
 
 After we created the collection, we can start with creating an initial document. We will create a user document in a collection named "users". This collection does not need to exist yet. The first document we'll insert in this collection will create the collection on the fly. This is because we have set OPTION_CREATE to true in $connectionOptions.
@@ -314,9 +319,9 @@ var_dump($id);
 
 Document properties can be set by using the set() method, or by directly manipulating the document properties.
 
-As you can see, sending a document to the server is achieved by calling the add() method on the client library's DocumentHandler class. It needs the collection name ("users" in this case") plus the document object to be added. add() will return the document id as created by the server. The id is a numeric value that might or might not fit in a PHP integer.
+As you can see, sending a document to the server is achieved by calling the add() method on the client library's *DocumentHandler* class. It needs the collection name ("users" in this case") plus the document object to be added. add() will return the document id as created by the server. The id is a numeric value that might or might not fit in a PHP integer.
 
-<a name="adding_exception_handling"/a>
+<a name="adding_exception_handling"></a>
 ## Adding exception handling
 
 
@@ -351,10 +356,10 @@ try {
 }
 ```
 
-<a name="retrieving_document"/a>
+<a name="retrieving_document"></a>
 ## Retrieving a document
 
-To retrieve a document from the server, the get() method of the DocumentHandler class can be used. It needs the collection name plus a document id. There is also the getById() method which is an alias for get().
+To retrieve a document from the server, the get() method of the *DocumentHandler* class can be used. It needs the collection name plus a document id. There is also the getById() method which is an alias for get().
 
 ```php
 // get the document back from the server
@@ -406,11 +411,11 @@ var_dump($cursor->getAll());
 This will return all documents from the specified collection (here: "users") with the properties provided in the example (here: that have an attribute "name" with a value of "John"). The result is a cursor which can be iterated sequentially or completely. We have chosen to get the complete result set above by calling the cursor's getAll() method.
 Note that getByExample() might return multiple documents if the example is ambigious.
 
-<a name="updating_document"/a>
+<a name="updating_document"></a>
 ## Updating a document
 
 
-To update an existing document, the update() method of the DocumentHandler class can be used.
+To update an existing document, the update() method of the *DocumentHandler* class can be used.
 
 ```php
 // update a document
@@ -435,10 +440,10 @@ $result = $handler->updateById('users', 4818344, $user);
 var_dump($result);
 ```
 
-<a name="deleting_document"/a>
+<a name="deleting_document"></a>
 ## Deleting a document
 
-To remove an existing document on the server, the remove() method of the DocumentHandler class will do. remove() just needs the document to be removed as a parameter:
+To remove an existing document on the server, the remove() method of the *DocumentHandler* class will do. remove() just needs the document to be removed as a parameter:
 
 ```php
 // remove a document on the server, using a document object
@@ -456,15 +461,15 @@ var_dump($result);
 ```
 
 
-<a name="running_aql"/a>
+<a name="running_aql"></a>
 ## Running an AQL query
 
 
-To run an AQL query, use the Statement class:
+To run an AQL query, use the *Statement* class:
 
 
 ```php
-// create a statement to insert tests 1000 users
+// create a statement to insert 1000 test users
 $statement = new ArangoStatement($connection, array(
     'query' => 'FOR i IN 1..1000 INSERT { _key: CONCAT('test', i) } IN users'
 ));
@@ -493,21 +498,101 @@ var_dump($cursor->getExtra());
 ```
 
 
-<a name="dropping_collection"/a>
-## Dropping a collection
+<a name="exporting_data"></a>
+## Exporting data
 
 
-To drop an existing collection on the server, use the drop() method of the CollectionHandler class. 
-drop() just needs the name of the collection name to be dropped:
+To export the contents of a collection to PHP, use the *Export* class.
+The *Export* class will create a light-weight cursor over all documents
+of the specified collection. The results can be transferred to PHP
+in chunks incrementally. This is the most efficient way of iterating
+over all documents in a collection.
+
 
 ```php
-// drop a collection on the server, using its name,
-$result = $collectionHandler->drop('users');
-var_dump($result);
+// creates an export object for collection users
+$export = new ArangoExport($connection, 'users', array());
+
+// execute the export. this will return a special, forward-only cursor
+$cursor = $export->execute();
+
+// now we can fetch the documents from the collection in blocks
+while ($docs = $cursor->getNextBatch()) {
+    // do something with $docs
+    var_dump($docs);
+}
+
+// the export can also be restricted to just a few attributes per document:
+$export = new ArangoExport($connection, 'users', array(
+    '_flat' => true,
+    'restrict' => array(
+        'type' => "include",
+        'fields' => array("_key", "likes")
+    )
+));
+
+// now fetch just the configured attributes for each document
+while ($docs = $cursor->getNextBatch()) {
+    // do something with $docs
+    var_dump($docs);
+}
 ```
 
 
-<a name="logging_exceptions"/a>
+<a name="bulk_documents"></a>
+## Bulk document handling
+
+
+The ArangoDB-PHP driver provides a mechanism to easily fetch multiple documents from
+the same collection with a single request. All that needs to be provided is an array
+of document keys:
+
+
+```php
+$exampleCollection = new ArangoCollection();
+$exampleCollection->setName('example');
+$id = $collectionHandler->add($exampleCollection);
+
+// create a statement to insert 100 example documents
+$statement = new ArangoStatement($connection, array(
+    'query' => 'FOR i IN 1..100 INSERT { _key: CONCAT("example", i), value: i } IN example'
+));
+$statement->execute();
+
+// later on, we can assemble a list of document keys
+$keys = array();
+for ($i = 1; $i <= 100; ++$i) {
+  $keys[] = 'example' . $i;
+}
+// and fetch all the documents at once
+$documents = $collectionHandler->lookupByKeys('example', $keys);
+var_dump($documents);
+
+// we can also bulk-remove them:
+$result = $collectionHandler->removeByKeys('example', $keys);
+
+var_dump($result);
+
+```
+
+<a name="dropping_collection"></a>
+## Dropping a collection
+
+
+To drop an existing collection on the server, use the drop() method of the *CollectionHandler* class. 
+drop() just needs the name of the collection name to be dropped:
+
+```php
+// drop a collection on the server, using its name
+$result = $collectionHandler->drop('users');
+var_dump($result);
+
+// drop the other one we created, too
+$collectionHandler->drop('example');
+```
+
+
+<a name="logging_exceptions"></a>
 ## Logging exceptions
 
 
@@ -533,7 +618,7 @@ use triagens\ArangoDb\Exception as ArangoException;
 ArangoException::disableLogging();
 ```
 
-<a name="alltogether"/a>
+<a name="alltogether"></a>
 ## Putting it all together
 
 Here's the full code that combines all the pieces outlined above:
@@ -554,29 +639,33 @@ use triagens\ArangoDb\DocumentHandler as ArangoDocumentHandler;
 use triagens\ArangoDb\Document as ArangoDocument;
 use triagens\ArangoDb\Statement as ArangoStatement;
 use triagens\ArangoDb\Exception as ArangoException;
+use triagens\ArangoDb\Export as ArangoExport;
 use triagens\ArangoDb\ConnectException as ArangoConnectException;
 use triagens\ArangoDb\ClientException as ArangoClientException;
 use triagens\ArangoDb\ServerException as ArangoServerException;
+use triagens\ArangoDb\Statement as ArangoStatement;
 use triagens\ArangoDb\UpdatePolicy as ArangoUpdatePolicy;
 
 // set up some basic connection options
 $connectionOptions = array(
+    // database name
+    ArangoConnectionOptions::OPTION_DATABASE      => '_system',
     // server endpoint to connect to
-    ArangoConnectionOptions::OPTION_ENDPOINT => 'tcp://127.0.0.1:8529',
+    ArangoConnectionOptions::OPTION_ENDPOINT      => 'tcp://127.0.0.1:8529',
     // authorization type to use (currently supported: 'Basic')
-    ArangoConnectionOptions::OPTION_AUTH_TYPE => 'Basic',
+    ArangoConnectionOptions::OPTION_AUTH_TYPE     => 'Basic',
     // user for basic authorization
-    ArangoConnectionOptions::OPTION_AUTH_USER => 'root',
+    ArangoConnectionOptions::OPTION_AUTH_USER     => 'root',
     // password for basic authorization
-    ArangoConnectionOptions::OPTION_AUTH_PASSWD => '',
+    ArangoConnectionOptions::OPTION_AUTH_PASSWD   => '',
     // connection persistence on server. can use either 'Close' (one-time connections) or 'Keep-Alive' (re-used connections)
-    ArangoConnectionOptions::OPTION_CONNECTION => 'Keep-Alive',
+    ArangoConnectionOptions::OPTION_CONNECTION    => 'Keep-Alive',
     // connect timeout in seconds
-    ArangoConnectionOptions::OPTION_TIMEOUT => 3,
+    ArangoConnectionOptions::OPTION_TIMEOUT       => 3,
     // whether or not to reconnect when a keep-alive connection has timed out on server
-    ArangoConnectionOptions::OPTION_RECONNECT => true,
+    ArangoConnectionOptions::OPTION_RECONNECT     => true,
     // optionally create new collections when inserting documents
-    ArangoConnectionOptions::OPTION_CREATE => true,
+    ArangoConnectionOptions::OPTION_CREATE        => true,
     // optionally create new collections when inserting documents
     ArangoConnectionOptions::OPTION_UPDATE_POLICY => ArangoUpdatePolicy::LAST,
 );
@@ -593,6 +682,9 @@ try {
     // clean up first
     if ($collectionHandler->has('users')) {
         $collectionHandler->drop('users');
+    }
+    if ($collectionHandler->has('example')) {
+        $collectionHandler->drop('example');
     }
 
     // create a new collection
@@ -658,7 +750,7 @@ try {
     var_dump($result);
 
 
-    // create a statement to insert tests 1000 users
+    // create a statement to insert 1000 test users
     $statement = new ArangoStatement($connection, array(
         'query' => 'FOR i IN 1..1000 INSERT { _key: CONCAT("test", i) } IN users'
     ));
@@ -686,10 +778,65 @@ try {
     var_dump($cursor->getExtra());
 
 
+    // creates an export object for collection users
+    $export = new ArangoExport($connection, 'users', array());
+
+    // execute the export. this will return a special, forward-only cursor
+    $cursor = $export->execute();
+
+    // now we can fetch the documents from the collection in blocks
+    while ($docs = $cursor->getNextBatch()) {
+        // do something with $docs
+        var_dump($docs);
+    }
+
+    // the export can also be restricted to just a few attributes per document:
+    $export = new ArangoExport($connection, 'users', array(
+        '_flat' => true,
+        'restrict' => array(
+            'type' => "include",
+            'fields' => array("_key", "likes")
+        )
+    ));
+
+    // now fetch just the configured attributes for each document
+    while ($docs = $cursor->getNextBatch()) {
+        // do something with $docs
+        var_dump($docs);
+    }
+
+
+    $exampleCollection = new ArangoCollection();
+    $exampleCollection->setName('example');
+    $id = $collectionHandler->add($exampleCollection);
+
+    // create a statement to insert 100 example documents
+    $statement = new ArangoStatement($connection, array(
+        'query' => 'FOR i IN 1..100 INSERT { _key: CONCAT("example", i), value: i } IN example'
+    ));
+    $statement->execute();
+
+    // later on, we can assemble a list of document keys
+    $keys = array();
+    for ($i = 1; $i <= 100; ++$i) {
+      $keys[] = 'example' . $i;
+    }
+    // and fetch all the documents at once
+    $documents = $collectionHandler->lookupByKeys('example', $keys);
+    var_dump($documents);
+
+    // we can also bulk-remove them:
+    $result = $collectionHandler->removeByKeys('example', $keys);
+
+    var_dump($result);
+
 
     // drop a collection on the server, using its name,
     $result = $collectionHandler->drop('users');
     var_dump($result);
+
+    // drop the other one we created, too
+    $collectionHandler->drop('example');
 }
 catch (ArangoConnectException $e) {
     print 'Connection error: ' . $e->getMessage() . PHP_EOL;
@@ -706,13 +853,13 @@ catch (ArangoServerException $e) {
 
 
 
-<a name="more_info"/a>
+<a name="more_info"></a>
 # More information
 
-* More example code, containing some code to create, delete and rename collections, is provided in the example subdirectory that is provided with the library.
+* More example code, containing some code to create, delete and rename collections, is provided in the **examples** subdirectory that is provided with the library.
 
 * PHPDoc documentation for the complete library is in the library's docs subdirectory. Point your browser at this directory to get a click-through version of the documentation.
 
-* [Follow us on Twitter @arangodbphp to receive updates on the php driver](https://twitter.com/arangodbphp)
+* [Follow us on Twitter](https://twitter.com/arangodbphp) [@arangodbphp](https://twitter.com/arangodbphp) to receive updates on the PHP driver
 
 * Check the ArangoDB PHP client on github.com regularly for new releases and updates: [https://github.com/arangodb/arangodb-php](https://github.com/arangodb/arangodb-php)

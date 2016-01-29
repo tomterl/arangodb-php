@@ -239,8 +239,8 @@ class Document
 
         if (is_array($hiddenAttributes)) {
             foreach ($hiddenAttributes as $hiddenAttributeName) {
-                if (!in_array($hiddenAttributeName, $attributes)) {
-                    unset ($attributes[$hiddenAttributeName]);
+                if (isset($attributes[$hiddenAttributeName])) {
+                    unset($attributes[$hiddenAttributeName]);
                 }
             }
         }
@@ -502,7 +502,7 @@ class Document
         }
 
 
-        if (!preg_match('/^[a-zA-Z0-9_-]{1,64}\/[a-zA-Z0-9_:-]{1,254}$/', $id)) {
+        if (!preg_match('/^[a-zA-Z0-9_-]{1,64}\/[a-zA-Z0-9_:\.@-]{1,254}$/', $id)) {
             throw new ClientException('Invalid format for document id');
         }
 
@@ -526,7 +526,7 @@ class Document
             throw new ClientException('Should not update the key of an existing document');
         }
 
-        if (!preg_match('/^[a-zA-Z0-9_:-]{1,254}$/', $key)) {
+        if (!preg_match('/^[a-zA-Z0-9_:\.@-]{1,254}$/', $key)) {
             throw new ClientException('Invalid format for document key');
         }
 

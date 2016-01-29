@@ -66,10 +66,14 @@ class HttpHelper
     const PROTOCOL = 'HTTP/1.1';
 
     /**
-     * HTTP protocol version used, hard-coded to version 1.1
+     * Boundary string for batch request parts
      */
     const MIME_BOUNDARY = 'XXXsubpartXXX';
 
+    /**
+     * HTTP Header for specifying a custom queue
+     */
+    const QUEUE_HEADER = 'X-Arango-Queue';
 
     /**
      * Validate an HTTP request method name
@@ -286,6 +290,10 @@ class HttpHelper
 
         if (!isset($parts[1]) or $parts[1] === null) {
             if ($originUrl !== null && $originMethod !== null) {
+                if ($httpMessage === '') {
+                    throw new ClientException('Got no response from the server after request to '
+                        . $originMethod . ' ' . $originUrl . ' - Note: this may be a timeout issue');
+                }
                 throw new ClientException('Got an invalid response from the server after request to '
                     . $originMethod . ' ' . $originUrl);
             }

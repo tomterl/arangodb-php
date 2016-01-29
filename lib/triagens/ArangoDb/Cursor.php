@@ -11,7 +11,7 @@
 namespace triagens\ArangoDb;
 
 /**
- * Provides access to the results of a read-only statement
+ * Provides access to the results of an AQL query or another statement
  *
  * The cursor might not contain all results in the beginning.<br>
  *
@@ -88,6 +88,11 @@ class Cursor implements
      * @var array
      */
     private $_extra;
+    
+    /**
+     * number of HTTP calls that were made to build the cursor result
+     */
+    private $_fetches = 1;
 
     /**
      * result entry for cursor id
@@ -125,6 +130,11 @@ class Cursor implements
     const ENTRY_SANITIZE = '_sanitize';
 
     /**
+     * custom queue option entry
+     */
+    const ENTRY_CUSTOM_QUEUE = 'customQueue';
+
+    /**
      * "flat" option entry (will treat the results as a simple array, not documents)
      */
     const ENTRY_FLAT = '_flat';
@@ -133,6 +143,11 @@ class Cursor implements
      * "objectType" option entry.
      */
     const ENTRY_TYPE = 'objectType';
+
+    /**
+     * "baseurl" option entry.
+     */
+    const ENTRY_BASEURL = 'baseurl';
 
     /**
      * Initialise the cursor with the first results and some metadata
@@ -154,7 +169,6 @@ class Cursor implements
             $this->_id = $data[self::ENTRY_ID];
         }
           
-
         if (isset($data[self::ENTRY_EXTRA])) {
             // ArangoDB 2.3+ return value struct
             $this->_extra = $data[self::ENTRY_EXTRA];
@@ -195,7 +209,7 @@ class Cursor implements
     {
         if ($this->_id) {
             try {
-                $this->_connection->delete(Urls::URL_CURSOR . '/' . $this->_id);
+                $this->_connection->delete($this->url() . '/' . $this->_id, $this->buildHeaders());
 
                 return true;
             } catch (Exception $e) {
@@ -334,16 +348,16 @@ class Cursor implements
      * @return void
      */
     private function add(array $data)
-    {	
+    {
     	foreach ($this->sanitize($data) as $row) {
-
             if ((isset($this->_options[self::ENTRY_FLAT]) && $this->_options[self::ENTRY_FLAT]) || !is_array($row)) {
                 $this->addFlatFromArray($row);
-            } else {
+            } 
+            else {
                 if (!isset($this->_options['objectType'])) {
                     $this->addDocumentsFromArray($row);
-                } else {
-
+                } 
+                else {
                     switch ($this->_options['objectType']) {
                         case 'edge' :
                             $this->addEdgesFromArray($row);
@@ -437,25 +451,34 @@ class Cursor implements
      */
     private function addShortestPathFromArray(array $data)
     {
+        if (! isset($data["vertices"])) {
+            return;
+        }
+
+        $vertices = $data["vertices"];
+        $startVertex = $vertices[0];
+        $destination = $vertices[count($vertices) - 1];
+
     	$entry = array(
     			"paths" => array (),
-    			"source" => $data["startVertex"],
+    			"source" => Document::createFromArray($startVertex, $this->_options),
     			"distance" => $data["distance"],
-    			"destination" => Document::createFromArray($data["vertex"], $this->_options),
+    			"destination" => Document::createFromArray($destination, $this->_options),
     	);
-    	foreach ($data["paths"] as $p) {
-    		$path = array (
+
+    	$path = array (
     				"vertices" => array(),
     				"edges" => array()
-    		);
-    		foreach ($p["vertices"] as $v) {
-	    		$path["vertices"][] = $v;
-	    	}
-	    	foreach ($p["edges"] as $v) {
-	    		$path["edges"][] = Edge::createFromArray($v, $this->_options);
-	    	}
-	    	$entry["paths"][] = $path;
+    	);
+
+    	foreach ($data["vertices"] as $v) {
+   		$path["vertices"][] = $v;
     	}
+    	foreach ($data["edges"] as $v) {
+    		$path["edges"][] = Edge::createFromArray($v, $this->_options);
+    	}
+    	$entry["paths"][] = $path;
+
     	$this->_result[] = $entry;
     }
     
@@ -469,12 +492,12 @@ class Cursor implements
      */
     private function addDistanceToFromArray(array $data)
     {
-    	$entry = array(
-    			"source" => $data["startVertex"],
-    			"distance" => $data["distance"],
-    			"destination" => Document::createFromArray($data["vertex"], $this->_options),
-    	);
-    	$this->_result[] = $entry;
+        $entry = array(
+                       "source" => $data["startVertex"],
+                       "distance" => $data["distance"],
+                       "destination" => $data["vertex"]
+        );
+        $this->_result[] = $entry;
     }
     
     /**
@@ -486,15 +509,18 @@ class Cursor implements
      */
     private function addCommonNeighborsFromArray(array $data)
     {	
-    	$k = array_keys($data);
-    	$k = $k[0];
-    	$this->_result[$k] = array();
+        $left  = $data["left"];
+        $right = $data["right"];
+
+        if (! isset($this->_result[$left])) {
+      	  $this->_result[$left] = array();
+        }
+        if (! isset($this->_result[$left][$right])) {
+      	  $this->_result[$left][$right] = array();
+        }
     	
-     	foreach ($data[$k] as $neighbor => $neighbors) {
-    		$this->_result[$k][$neighbor] = array();
-    		foreach ($neighbors as $n) {
-    			$this->_result[$k][$neighbor][] = Document::createFromArray($n);
-    		}
+    	foreach ($data["neighbors"] as $neighbor) {
+  			$this->_result[$left][$right][] = Document::createFromArray($neighbor);
      	}
     }
     
@@ -593,18 +619,41 @@ class Cursor implements
     private function fetchOutstanding()
     {
         // continuation
-        $response = $this->_connection->put(Urls::URL_CURSOR . "/" . $this->_id, '');
+        $response = $this->_connection->put($this->url() . "/" . $this->_id, '', $this->buildHeaders());
+        ++$this->_fetches;
+
         $data     = $response->getJson();
 
         $this->_hasMore = (bool) $data[self::ENTRY_HASMORE];
         $this->add($data[self::ENTRY_RESULT]);
 
         if (!$this->_hasMore) {
-            // we have fetch the complete result set and can unset the id now
+            // we have fetched the complete result set and can unset the id now
             $this->_id = null;
         }
 
         $this->updateLength();
+    }
+
+
+    /**
+     * Build headers for the cursor requests
+     *
+     * @return array - headers used when executing further cursor fetches
+     */
+    private function buildHeaders()  
+    {
+        $result = array();
+
+        if (isset($this->_options[self::ENTRY_CUSTOM_QUEUE])) {
+            $value = $this->_options[self::ENTRY_CUSTOM_QUEUE];
+
+            if ($value != null && $value !== '') {
+                $result[HttpHelper::QUEUE_HEADER] = $this->_options[self::ENTRY_CUSTOM_QUEUE];
+            }
+        }
+
+        return $result;
     }
 
 
@@ -618,6 +667,35 @@ class Cursor implements
         $this->_length = count($this->_result);
     }
 
+    
+    /**
+     * Get a statistical figure value from the query result
+     *
+     * @param string $name - name of figure to return
+     *
+     * @return int
+     */
+    private function getStatValue($name) 
+    {
+        if (isset($this->_extra[self::ENTRY_STATS][$name])) {
+            return $this->_extra[self::ENTRY_STATS][$name];
+        }
+        return 0;
+    }
+
+    /**
+     * Return the base URL for the cursor 
+     *
+     * @return string
+     */
+    private function url() {
+        if (isset($this->_options[self::ENTRY_BASEURL])) {
+            return $this->_options[self::ENTRY_BASEURL];
+        }
+
+        // this is the fallback
+        return Urls::URL_CURSOR;
+    }
     
     /**
      * Get a statistical figure value from the query result
@@ -716,6 +794,26 @@ class Cursor implements
     public function getFiltered()
     {
         return $this->getStatValue('filtered');
+    }
+
+    /**
+     * Return the number of HTTP calls that were made to build the cursor result
+     *
+     * @return int
+     */
+    public function getFetches()
+    {
+        return $this->_fetches;
+    }
+
+    /**
+     * Return the cursor id, if any
+     *
+     * @return string
+     */
+    public function getId()
+    {
+        return $this->_id;
     }
 
 }

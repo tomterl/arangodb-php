@@ -1336,8 +1336,8 @@ class GraphHandler extends
             $graph = $graph->getKey();
         }
 
-        $options['objectType'] = 'vertex';
-        $data                  = array_merge($options, $this->getCursorOptions($options));
+        $options['includeData'] = true;
+        $options['objectType']  = 'vertex';
         $filterString = 'FILTER ';
         $statement = new Statement($this->getConnection(), array(
         		"query"     => ''
@@ -1353,38 +1353,7 @@ class GraphHandler extends
         	}
         	$options['direction'] = $options['filter']['direction'];
         }
-        if (isset($options['filter']) && isset($options['filter']['properties'])) {
-        	if (!isset($options['filter']['properties'][0])) {
-        		$tmp = $options['filter']['properties'];
-        		$options['filter']['properties'] = array();
-        		$options['filter']['properties'][0] = $tmp;
-        	}
-        	$i = 0;
-        	foreach ($options['filter']['properties'] as $filter) {
-        		$i++;
-        		switch ($filter['compare']) {
-        			case "HAS":
-        				$aql .= $filterString . "HAS(a.path.edges[0], @key" . $i . ") ";
-        				$statement->bind('key' . $i, $filter['key']);
-        				break;
-        			case "HAS_NOT":
-        				$aql .= $filterString . "!HAS(a.path.edges[0], @key" . $i . ") ";
-        				$statement->bind('key' . $i, $filter['key']);
-        				break;
-        			default:
-        				$aql .= $filterString . "a.path.edges[0][@key" . $i . "] " .  $filter['compare'] . " @value" . $i;
-        				$statement->bind('key' . $i, $filter['key']);
-        				$statement->bind('value' . $i, $filter['value']);
-        				break;
-        		} 
-        		$filterString = ' && ';
-        	}
-        }
         
-        if (isset($options['filter']) && isset($options['filter']['labels'])) {
-        	$aql .= $filterString . 'a.path.edges[0]["$label"] IN @labels ';
-        	$statement->bind('labels', $options['filter']['labels']);
-        }
         unset($options['filter']);  
         $statement->bind('graphName', $graph);
         $statement->bind('vertex', $vertexExample);
@@ -1414,7 +1383,7 @@ class GraphHandler extends
         	unset($this->limit);
         }
         
-        $aql .= " RETURN a.vertex";
+        $aql .= " RETURN a";
         $statement->setQuery($aql);
         return $statement->execute();
         
@@ -1523,7 +1492,6 @@ class GraphHandler extends
         }
         
         $options['objectType'] = 'vertex';
-        $data                  = array_merge($options, $this->getCursorOptions($options));
         $filterString = 'FILTER ';
         $statement = new Statement($this->getConnection(), array(
         		"query"     => ''
@@ -1646,8 +1614,8 @@ class GraphHandler extends
             $graph = $graph->getKey();
         }
         
-        $options['objectType'] = 'edge';
-        $data                  = array_merge($options, $this->getCursorOptions($options));
+        $options['objectType']  = 'edge';
+        $options['includeData'] = true;
         $filterString = 'FILTER ';
         $statement = new Statement($this->getConnection(), array(
         		"query"     => ''
@@ -1770,7 +1738,6 @@ class GraphHandler extends
      	}
      
      	$options['objectType'] = 'path';
-     	$data                  = array_merge($options, $this->getCursorOptions($options));
      	$statement = new Statement($this->getConnection(), array(
      			"query"     => ''
      	));
@@ -1861,21 +1828,21 @@ class GraphHandler extends
       * @return Cursor
       */
      public function getShortestPaths($graph, 
-     								  $startVertexExample = null,
-                                      $endVertexExample = null,
+  				  $startVertexExample = array(),
+                                      $endVertexExample = array(),
                                       $options = array())
      {
      	if ($graph instanceof Graph) {
      		$graph = $graph->getKey();
      	}
      	 
-     	$options['objectType'] = 'shortestPath';
-     	$data                  = array_merge($options, $this->getCursorOptions($options));
+     	$options['includeData'] = true;
+     	$options['objectType']  = 'shortestPath';
      	$statement = new Statement($this->getConnection(), array(
      			"query"     => ''
      	));
      	$statement->setResultType($options['objectType']);
-     	$aql = "FOR a IN GRAPH_SHORTEST_PATH(@graphName, @start, @end , @options) ";
+     	$aql = "FOR a IN GRAPH_SHORTEST_PATH(@graphName, @start, @end, @options) ";
      	 
      	if (isset($options['direction'])) {
      		if ($options['direction'] === "in") {
@@ -1947,12 +1914,11 @@ class GraphHandler extends
      	}
      	 
      	$options['objectType'] = 'distanceTo';
-     	$data                  = array_merge($options, $this->getCursorOptions($options));
      	$statement = new Statement($this->getConnection(), array(
      			"query"     => ''
      	));
      	$statement->setResultType($options['objectType']);
-     	$aql = "FOR a IN GRAPH_DISTANCE_TO(@graphName, @start, @end , @options) ";
+     	$aql = "FOR a IN GRAPH_DISTANCE_TO(@graphName, @start, @end, @options) ";
      	 
      	if (isset($options['direction'])) {
      		if ($options['direction'] === "in") {
@@ -2061,6 +2027,8 @@ class GraphHandler extends
      	$statement->bind('graphName', $graph);
      	$statement->bind('vertex1', $vertex1Example);
      	$statement->bind('vertex2', $vertex2Example);
+        $options1['includeData'] = true;
+        $options2['includeData'] = true;
      	$statement->bind('options1', $options1);
      	$statement->bind('options2', $options2);
         if (isset($this->batchsize)) {
@@ -2079,7 +2047,6 @@ class GraphHandler extends
      	$aql .= " RETURN a";
      	$statement->setQuery($aql);
      	return $statement->execute();
-     
      }
      
      
@@ -2197,7 +2164,6 @@ class GraphHandler extends
      	}
      	 
      	$options['objectType'] = 'figure';
-     	$data                  = array_merge($options, $this->getCursorOptions($options));
      	$statement = new Statement($this->getConnection(), array(
      			"query"     => ''
      	));
@@ -2254,7 +2220,6 @@ class GraphHandler extends
      	}
      	 
      	$options['objectType'] = 'figure';
-     	$data                  = array_merge($options, $this->getCursorOptions($options));
      	$statement = new Statement($this->getConnection(), array(
      			"query"     => ''
      	));
@@ -2325,7 +2290,6 @@ class GraphHandler extends
      	}
      	 
      	$options['objectType'] = 'figure';
-     	$data                  = array_merge($options, $this->getCursorOptions($options));
      	$statement = new Statement($this->getConnection(), array(
      			"query"     => ''
      	));
@@ -2382,7 +2346,6 @@ class GraphHandler extends
      	}
      	 
      	$options['objectType'] = 'figure';
-     	$data                  = array_merge($options, $this->getCursorOptions($options));
      	$statement = new Statement($this->getConnection(), array(
      			"query"     => ''
      	));
@@ -2439,7 +2402,6 @@ class GraphHandler extends
      	}
      	 
      	$options['objectType'] = 'figure';
-     	$data                  = array_merge($options, $this->getCursorOptions($options));
      	$statement = new Statement($this->getConnection(), array(
      			"query"     => ''
      	));
@@ -2466,7 +2428,6 @@ class GraphHandler extends
      /**
       * Get the <a href="http://en.wikipedia.org/wiki/Betweenness_centrality">betweenness</a> of a graph.
       *
-      * This will throw if the list cannot be fetched from the server
       * This does not support 'batchsize', 'limit' and 'count'.<br><br>
       *
       * @throws Exception
@@ -2487,17 +2448,16 @@ class GraphHandler extends
       *
       * @return array
       */
-     public function getBetweenness($graph,
-     $options = array())
+     public function getBetweenness($graph, $options = array())
      {
      	if ($graph instanceof Graph) {
      		$graph = $graph->getKey();
      	}
      	 
      	$options['objectType'] = 'figure';
-     	$data                  = array_merge($options, $this->getCursorOptions($options));
      	$statement = new Statement($this->getConnection(), array(
-     			"query"     => ''
+     			"query"     => '',
+                        "_flat"     => true
      	));
      	$statement->setResultType($options['objectType']);
      	$aql = "RETURN GRAPH_BETWEENNESS(@graphName, @options) ";
@@ -2515,7 +2475,9 @@ class GraphHandler extends
      	$statement->bind('options', $options);
      	 
      	$statement->setQuery($aql);
-     	return $statement->execute()->getAll();
+     	$result = $statement->execute()->getAll();
+
+        return $result[0];
      }
      
      /**
@@ -2550,7 +2512,6 @@ class GraphHandler extends
      	}
      	 
      	$options['objectType'] = 'figure';
-     	$data                  = array_merge($options, $this->getCursorOptions($options));
      	$statement = new Statement($this->getConnection(), array(
      			"query"     => ''
      	));
@@ -2607,7 +2568,6 @@ class GraphHandler extends
      	}
      	 
      	$options['objectType'] = 'figure';
-     	$data                  = array_merge($options, $this->getCursorOptions($options));
      	$statement = new Statement($this->getConnection(), array(
      			"query"     => ''
      	));
