@@ -235,4 +235,13 @@ abstract class Urls
      */
     const URL_QUERY_CACHE = '/_api/query-cache';
 
+    /**
+     * URL for file uploads
+     */
+    const URL_UPLOAD = '/_api/upload';
+
+    /**
+     * URL for foxx-app installations
+     */
+    const URL_FOXX_INSTALL = '/_admin/foxx/install';
 }
