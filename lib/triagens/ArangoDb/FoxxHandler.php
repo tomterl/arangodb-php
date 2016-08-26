@@ -31,17 +31,15 @@ class FoxxHandler extends Handler
     public function installFoxxZip($localZip, $mountPoint, $options = array())
     {
         if (!file_exists($localZip)) {
-            throw new ClientException("Foxx-Zip {$localZip} does not exist (or unreadable).");
+            throw new ClientException("Foxx-Zip {$localZip} does not exist (or file is unreadable).");
         }
-        $url      = UrlHelper::buildUrl(Urls::URL_UPLOAD);
-        $post = array(
-            'data' => file_get_contents($localZip),
-        );
-        $upload = $this->getConnection()->post($url, $post);
+        
+        $post = file_get_contents($localZip);
+        $response = $this->getConnection()->post(Urls::URL_UPLOAD, $post);
 
-        if ($upload->getHttpCode() < 400) {
-            $response = $this->getConnection()->put(Urls::URL_FOXX_INSTALL, array('appInfo' => $upload['filename'], 'mount' => $mountPoint));
-            if ($upload->getHttpCode() < 400) {
+        if ($response->getHttpCode() < 400) {
+            $response = $this->getConnection()->put(Urls::URL_FOXX_INSTALL, json_encode(array('appInfo' => $response->getJson()['filename'], 'mount' => $mountPoint)));
+            if ($response->getHttpCode() < 400) {
                 return $response->getJson();
             } else { 
                 throw new ClientException('Foxx-Zip install failed');
