@@ -66,7 +66,7 @@ class Database
      *                                  username - the database owner, for example 'root'
      *                                  extra - information for the user, stored but ignored by arangodb
      *                                  passwd - the users password
-     *                                  active - activate the account '$user' - default is true
+     *                                  active - activate the account 'username' - default is true
      *                                  users array of additional users (each user an array with the keys 'username', 'active', 'passwd')
      *
      * @link http://docs.arangodb.com/2.8/HttpDatabase/DatabaseManagement.html
