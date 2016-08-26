@@ -28,21 +28,56 @@ class Database
     const ENTRY_DATABASE_NAME = 'name';
 
     /**
+     * Username parameter
+     */
+    const ENTRY_DATABASE_USERNAME = 'username';
+
+    /**
+     * Extra user information parameter
+     */
+    const ENTRY_DATABASE_EXTRA = 'extra';
+
+    /**
+     * Password parameter
+     */
+    const ENTRY_DATABASE_PASSWD = 'passwd';
+
+    /**
+     * Active parameter
+     */
+    const ENTRY_DATABASE_ACTIVE = 'active';
+
+    /**
+     * Additional users parameter
+     */
+    const ENTRY_DATABASE_USERS = 'users';
+    
+    /**
+     * 
+     */
+    /**
      * creates a database
      *
      * This creates a new database<br>
      *
-     * @param Connection $connection - the connection to be used
-     * @param string     $name       - the database specification, for example 'myDatabase'
+     * @param Connection $connection  - the connection to be used
+     * @param string     $name        - the database name, for example 'myDatabase'
+     * @param array      $options     - additional parameters
+     *                                  username - the database owner, for example 'root'
+     *                                  extra - information for the user, stored but ignored by arangodb
+     *                                  passwd - the users password
+     *                                  active - activate the account '$user' - default is true
+     *                                  users array of additional users (each user an array with the keys 'username', 'active', 'passwd')
      *
-     * @link http://www.arangodb.com/manuals/1.4/HttpDatabase.html
+     * @link http://docs.arangodb.com/2.8/HttpDatabase/DatabaseManagement.html
      *
      * @return array $responseArray - The response array.
      */
-    public static function create(Connection $connection, $name)
+    public static function create(Connection $connection, $name, $options = array())
     {
         $payload = array(self::ENTRY_DATABASE_NAME => $name);
-
+        $payload = araray_merge($payload, $options);
+        
         $response = $connection->post(Urls::URL_DATABASE, $connection->json_encode_wrapper($payload));
 
         $responseArray = $response->getJson();
