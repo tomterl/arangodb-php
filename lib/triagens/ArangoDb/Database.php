@@ -76,7 +76,7 @@ class Database
     public static function create(Connection $connection, $name, $options = array())
     {
         $payload = array(self::ENTRY_DATABASE_NAME => $name);
-        $payload = araray_merge($payload, $options);
+        $payload = array_merge($payload, $options);
         
         $response = $connection->post(Urls::URL_DATABASE, $connection->json_encode_wrapper($payload));
 
