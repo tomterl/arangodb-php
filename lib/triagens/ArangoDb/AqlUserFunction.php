@@ -14,7 +14,7 @@ namespace triagens\ArangoDb;
  *
  * AqlUserFunction object<br>
  * An AqlUserFunction is an object that is used to manage AQL User Functions.<br>
- * It registers, unregisters and lists user functions on the server<br>
+ * It registers, un-registers and lists user functions on the server<br>
  * <br>
  * The object encapsulates:<br>
  * <br>
@@ -43,7 +43,7 @@ namespace triagens\ArangoDb;
  *
  * @property string $name - The name of the user function
  * @property string $code - The code of the user function
- * @property mixed  _action
+ * @property string _action
  *
  * @package   triagens\ArangoDb
  * @since     1.3
@@ -55,14 +55,14 @@ class AqlUserFunction
      *
      * @var Connection
      */
-    private $_connection = null;
+    private $_connection;
 
     /**
      * The transaction's attributes.
      *
      * @var array
      */
-    protected $attributes = array();
+    protected $attributes = [];
 
     /**
      * The transaction's action.
@@ -97,7 +97,7 @@ class AqlUserFunction
      * @param Connection $connection      - the connection to be used
      * @param array      $attributesArray - user function initialization data
      *
-     * @return \triagens\ArangoDb\AqlUserFunction
+     * @throws \triagens\ArangoDb\ClientException
      */
     public function __construct(Connection $connection, array $attributesArray = null)
     {
@@ -135,18 +135,17 @@ class AqlUserFunction
             $attributes['code'] = $code;
         }
 
-        $response      = $this->_connection->post(
-                                           Urls::URL_AQL_USER_FUNCTION,
-                                           $this->getConnection()->json_encode_wrapper($attributes)
+        $response = $this->_connection->post(
+            Urls::URL_AQL_USER_FUNCTION,
+            $this->getConnection()->json_encode_wrapper($attributes)
         );
-        $responseArray = $response->getJson();
 
-        return $responseArray;
+        return $response->getJson();
     }
 
 
     /**
-     * Unregister the user function
+     * Un-register the user function
      *
      * If no parameter ($name) is passed, it will use the property of the object.
      *
@@ -161,20 +160,19 @@ class AqlUserFunction
      */
     public function unregister($name = null, $namespace = false)
     {
-        if (is_null($name)) {
+        if (null === $name) {
             $name = $this->getName();
         }
 
-        $url = UrlHelper::buildUrl(Urls::URL_AQL_USER_FUNCTION, array($name));
+        $url = UrlHelper::buildUrl(Urls::URL_AQL_USER_FUNCTION, [$name]);
 
         if ($namespace) {
-            $url = UrlHelper::appendParamsUrl($url, array('group' => true));
+            $url = UrlHelper::appendParamsUrl($url, ['group' => true]);
         }
 
-        $response      = $this->_connection->delete($url);
-        $responseArray = $response->getJson();
+        $response = $this->_connection->delete($url);
 
-        return $responseArray;
+        return $response->getJson();
     }
 
 
@@ -191,15 +189,13 @@ class AqlUserFunction
      */
     public function getRegisteredUserFunctions($namespace = null)
     {
-        $url = UrlHelper::buildUrl(Urls::URL_AQL_USER_FUNCTION, array());
-        if (!is_null($namespace)) {
-            $url = UrlHelper::appendParamsUrl($url, array('namespace' => $namespace));
+        $url = UrlHelper::buildUrl(Urls::URL_AQL_USER_FUNCTION, []);
+        if (null !== $namespace) {
+            $url = UrlHelper::appendParamsUrl($url, ['namespace' => $namespace]);
         }
         $response = $this->_connection->get($url);
 
-        $responseArray = $response->getJson();
-
-        return $responseArray;
+        return $response->getJson();
     }
 
 
@@ -225,6 +221,8 @@ class AqlUserFunction
      *
      *
      * @param string $value
+     *
+     * @throws \triagens\ArangoDb\ClientException
      */
     public function setName($value)
     {
@@ -246,6 +244,8 @@ class AqlUserFunction
      * Set user function code
      *
      * @param string $value
+     *
+     * @throws \triagens\ArangoDb\ClientException
      */
     public function setCode($value)
     {
@@ -270,6 +270,7 @@ class AqlUserFunction
      * @param $key
      * @param $value
      *
+     * @return $this
      * @throws ClientException
      */
     public function set($key, $value)
@@ -279,6 +280,8 @@ class AqlUserFunction
         }
 
         $this->attributes[$key] = $value;
+
+        return $this;
     }
 
 
@@ -290,10 +293,10 @@ class AqlUserFunction
      *
      * @throws ClientException
      *
+     * @magic
+     *
      * @param string $key   - attribute name
      * @param mixed  $value - value for attribute
-     *
-     * @return void
      */
     public function __set($key, $value)
     {
@@ -327,9 +330,27 @@ class AqlUserFunction
     }
 
     /**
+     * Is triggered by calling isset() or empty() on inaccessible properties.
+     *
+     * @param string $key - name of attribute
+     *
+     * @return boolean returns true or false (set or not set)
+     */
+    public function __isset($key)
+    {
+        if (isset($this->attributes[$key])) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
      * Get an attribute, magic method
      *
      * This function is mapped to get() internally.
+     *
+     * @magic
      *
      * @param string $key - name of attribute
      *
@@ -344,6 +365,8 @@ class AqlUserFunction
     /**
      * Returns the action string
      *
+     * @magic
+     *
      * @return string - the current action string
      */
     public function __toString()
@@ -355,6 +378,8 @@ class AqlUserFunction
      * Build the object's attributes from a given array
      *
      * @param $options
+     *
+     * @throws \triagens\ArangoDb\ClientException
      */
     public function buildAttributesFromArray($options)
     {

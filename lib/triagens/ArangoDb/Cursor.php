@@ -17,8 +17,7 @@ namespace triagens\ArangoDb;
  *
  * If the result set is too big to be transferred in one go, the
  * cursor might issue additional HTTP requests to fetch the
- * remaining results from the server.<br>
- * <br>
+ * remaining results from the server.
  *
  * @package   triagens\ArangoDb
  * @since     0.2
@@ -32,13 +31,19 @@ class Cursor implements
      * @var Connection
      */
     private $_connection;
-
     /**
      * Cursor options
      *
      * @var array
      */
     private $_options;
+
+    /**
+     * Result Data
+     *
+     * @var array
+     */
+    private $data;
 
     /**
      * The result set
@@ -88,11 +93,16 @@ class Cursor implements
      * @var array
      */
     private $_extra;
-    
+
     /**
      * number of HTTP calls that were made to build the cursor result
      */
     private $_fetches = 1;
+
+    /**
+     * whether or not the query result was served from the AQL query result cache
+     */
+    private $_cached;
 
     /**
      * result entry for cursor id
@@ -108,12 +118,12 @@ class Cursor implements
      * result entry for result documents
      */
     const ENTRY_RESULT = 'result';
-    
+
     /**
      * result entry for extra data
      */
     const ENTRY_EXTRA = 'extra';
-    
+
     /**
      * result entry for stats
      */
@@ -125,20 +135,25 @@ class Cursor implements
     const FULL_COUNT = 'fullCount';
 
     /**
+     * cache option entry
+     */
+    const ENTRY_CACHE = 'cache';
+
+    /**
+     * cached result attribute - whether or not the result was served from the AQL query cache
+     */
+    const ENTRY_CACHED = 'cached';
+
+    /**
      * sanitize option entry
      */
     const ENTRY_SANITIZE = '_sanitize';
 
     /**
-     * custom queue option entry
-     */
-    const ENTRY_CUSTOM_QUEUE = 'customQueue';
-
-    /**
      * "flat" option entry (will treat the results as a simple array, not documents)
      */
     const ENTRY_FLAT = '_flat';
-    
+
     /**
      * "objectType" option entry.
      */
@@ -156,30 +171,34 @@ class Cursor implements
      * @param array      $data       - initial result data as returned by the server
      * @param array      $options    - cursor options
      *
-     * @return Cursor
+     * @throws \triagens\ArangoDb\ClientException
      */
     public function __construct(Connection $connection, array $data, array $options)
     {
         $this->_connection = $connection;
         $this->data        = $data;
         $this->_id         = null;
-        $this->_extra      = array();
+        $this->_extra      = [];
+        $this->_cached     = false;
 
         if (isset($data[self::ENTRY_ID])) {
             $this->_id = $data[self::ENTRY_ID];
         }
-          
+
         if (isset($data[self::ENTRY_EXTRA])) {
             // ArangoDB 2.3+ return value struct
             $this->_extra = $data[self::ENTRY_EXTRA];
-          
+
             if (isset($this->_extra[self::ENTRY_STATS][self::FULL_COUNT])) {
                 $this->_fullCount = $this->_extra[self::ENTRY_STATS][self::FULL_COUNT];
             }
-        }
-        else if (isset($data[self::ENTRY_EXTRA][self::FULL_COUNT])) {
+        } else if (isset($data[self::ENTRY_EXTRA][self::FULL_COUNT])) {
             // pre-ArangoDB 2.3 return value struct
             $this->_fullCount = $data[self::ENTRY_EXTRA][self::FULL_COUNT];
+        }
+
+        if (isset($data[self::ENTRY_CACHED])) {
+            $this->_cached = $data[self::ENTRY_CACHED];
         }
 
         // attribute must be there
@@ -188,7 +207,7 @@ class Cursor implements
 
         $options['isNew'] = false;
         $this->_options   = $options;
-        $this->_result    = array();
+        $this->_result    = [];
         $this->add((array) $data[self::ENTRY_RESULT]);
         $this->updateLength();
 
@@ -209,7 +228,7 @@ class Cursor implements
     {
         if ($this->_id) {
             try {
-                $this->_connection->delete($this->url() . '/' . $this->_id, $this->buildHeaders());
+                $this->_connection->delete($this->url() . '/' . $this->_id, []);
 
                 return true;
             } catch (Exception $e) {
@@ -246,6 +265,17 @@ class Cursor implements
     public function getFullCount()
     {
         return $this->_fullCount;
+    }
+
+
+    /**
+     * Get the cached attribute for the result set
+     *
+     * @return bool - whether or not the query result was served from the AQL query cache
+     */
+    public function getCached()
+    {
+        return $this->_cached;
     }
 
 
@@ -346,18 +376,17 @@ class Cursor implements
      * @param array $data - incoming result
      *
      * @return void
+     * @throws \triagens\ArangoDb\ClientException
      */
     private function add(array $data)
     {
-    	foreach ($this->sanitize($data) as $row) {
-            if ((isset($this->_options[self::ENTRY_FLAT]) && $this->_options[self::ENTRY_FLAT]) || !is_array($row)) {
+        foreach ($this->sanitize($data) as $row) {
+            if (!is_array($row) || (isset($this->_options[self::ENTRY_FLAT]) && $this->_options[self::ENTRY_FLAT])) {
                 $this->addFlatFromArray($row);
-            } 
-            else {
+            } else {
                 if (!isset($this->_options['objectType'])) {
                     $this->addDocumentsFromArray($row);
-                } 
-                else {
+                } else {
                     switch ($this->_options['objectType']) {
                         case 'edge' :
                             $this->addEdgesFromArray($row);
@@ -412,77 +441,80 @@ class Cursor implements
      * @param array $data - array of incoming "document" arrays
      *
      * @return void
+     * @throws \triagens\ArangoDb\ClientException
      */
     private function addDocumentsFromArray(array $data)
     {
         $this->_result[] = Document::createFromArray($data, $this->_options);
     }
-    
+
     /**
      * Create an array of paths from the input array
      *
      * @param array $data - array of incoming "paths" arrays
      *
      * @return void
+     * @throws \triagens\ArangoDb\ClientException
      */
     private function addPathsFromArray(array $data)
-    {	
-    	$entry = array(
-    		"vertices" => array(),
-    		"edges" => array(),
-    		"source" => Document::createFromArray($data["source"], $this->_options),
-    		"destination" => Document::createFromArray($data["destination"], $this->_options),
-    	);
-    	foreach ($data["vertices"] as $v) {
-    		$entry["vertices"][] = Document::createFromArray($v, $this->_options);
-    	}
-    	foreach ($data["edges"] as $v) {
-    		$entry["edges"][] = Edge::createFromArray($v, $this->_options);
-    	}
-    	$this->_result[] = $entry;
+    {
+        $entry = [
+            'vertices'    => [],
+            'edges'       => [],
+            'source'      => Document::createFromArray($data['source'], $this->_options),
+            'destination' => Document::createFromArray($data['destination'], $this->_options),
+        ];
+        foreach ($data['vertices'] as $v) {
+            $entry['vertices'][] = Document::createFromArray($v, $this->_options);
+        }
+        foreach ($data['edges'] as $v) {
+            $entry['edges'][] = Edge::createFromArray($v, $this->_options);
+        }
+        $this->_result[] = $entry;
     }
-    
+
     /**
      * Create an array of shortest paths from the input array
      *
      * @param array $data - array of incoming "paths" arrays
      *
      * @return void
+     * @throws \triagens\ArangoDb\ClientException
      */
     private function addShortestPathFromArray(array $data)
     {
-        if (! isset($data["vertices"])) {
+        if (!isset($data['vertices'])) {
             return;
         }
 
-        $vertices = $data["vertices"];
+        $vertices    = $data['vertices'];
         $startVertex = $vertices[0];
         $destination = $vertices[count($vertices) - 1];
 
-    	$entry = array(
-    			"paths" => array (),
-    			"source" => Document::createFromArray($startVertex, $this->_options),
-    			"distance" => $data["distance"],
-    			"destination" => Document::createFromArray($destination, $this->_options),
-    	);
+        $entry = [
+            'paths'       => [],
+            'source'      => Document::createFromArray($startVertex, $this->_options),
+            'distance'    => $data['distance'],
+            'destination' => Document::createFromArray($destination, $this->_options),
+        ];
 
-    	$path = array (
-    				"vertices" => array(),
-    				"edges" => array()
-    	);
+        $path = [
+            'vertices' => [],
+            'edges'    => []
+        ];
 
-    	foreach ($data["vertices"] as $v) {
-   		$path["vertices"][] = $v;
-    	}
-    	foreach ($data["edges"] as $v) {
-    		$path["edges"][] = Edge::createFromArray($v, $this->_options);
-    	}
-    	$entry["paths"][] = $path;
+        foreach ($data['vertices'] as $v) {
+            $path['vertices'][] = $v;
+        }
+        foreach ($data['edges'] as $v) {
+            $path['edges'][] = Edge::createFromArray($v, $this->_options);
+        }
+        $entry['paths'][] = $path;
 
-    	$this->_result[] = $entry;
+        $this->_result[] = $entry;
     }
-    
-    
+
+
     /**
      * Create an array of distances from the input array
      *
@@ -492,38 +524,39 @@ class Cursor implements
      */
     private function addDistanceToFromArray(array $data)
     {
-        $entry = array(
-                       "source" => $data["startVertex"],
-                       "distance" => $data["distance"],
-                       "destination" => $data["vertex"]
-        );
+        $entry           = [
+            'source'      => $data['startVertex'],
+            'distance'    => $data['distance'],
+            'destination' => $data['vertex']
+        ];
         $this->_result[] = $entry;
     }
-    
+
     /**
      * Create an array of common neighbors from the input array
      *
      * @param array $data - array of incoming "paths" arrays
      *
      * @return void
+     * @throws \triagens\ArangoDb\ClientException
      */
     private function addCommonNeighborsFromArray(array $data)
-    {	
-        $left  = $data["left"];
-        $right = $data["right"];
+    {
+        $left  = $data['left'];
+        $right = $data['right'];
 
-        if (! isset($this->_result[$left])) {
-      	  $this->_result[$left] = array();
+        if (!isset($this->_result[$left])) {
+            $this->_result[$left] = [];
         }
-        if (! isset($this->_result[$left][$right])) {
-      	  $this->_result[$left][$right] = array();
+        if (!isset($this->_result[$left][$right])) {
+            $this->_result[$left][$right] = [];
         }
-    	
-    	foreach ($data["neighbors"] as $neighbor) {
-  			$this->_result[$left][$right][] = Document::createFromArray($neighbor);
-     	}
+
+        foreach ($data['neighbors'] as $neighbor) {
+            $this->_result[$left][$right][] = Document::createFromArray($neighbor);
+        }
     }
-    
+
     /**
      * Create an array of common properties from the input array
      *
@@ -532,17 +565,17 @@ class Cursor implements
      * @return void
      */
     private function addCommonPropertiesFromArray(array $data)
-    {	
-    	$k = array_keys($data);
-    	$k = $k[0];
-     	$this->_result[$k] = array();
-      	foreach ($data[$k] as $c) {
-      		$id = $c["_id"];
-      		unset($c["_id"]);
-     		$this->_result[$k][$id] = $c;
-      	}
+    {
+        $k                 = array_keys($data);
+        $k                 = $k[0];
+        $this->_result[$k] = [];
+        foreach ($data[$k] as $c) {
+            $id = $c['_id'];
+            unset($c['_id']);
+            $this->_result[$k][$id] = $c;
+        }
     }
-    
+
     /**
      * Create an array of figuresfrom the input array
      *
@@ -551,16 +584,17 @@ class Cursor implements
      * @return void
      */
     private function addFigureFromArray(array $data)
-    {	
-    	$this->_result = $data;
+    {
+        $this->_result = $data;
     }
-    
+
     /**
      * Create an array of Edges from the input array
      *
      * @param array $data - array of incoming "edge" arrays
      *
      * @return void
+     * @throws \triagens\ArangoDb\ClientException
      */
     private function addEdgesFromArray(array $data)
     {
@@ -574,6 +608,7 @@ class Cursor implements
      * @param array $data - array of incoming "vertex" arrays
      *
      * @return void
+     * @throws \triagens\ArangoDb\ClientException
      */
     private function addVerticesFromArray(array $data)
     {
@@ -593,7 +628,7 @@ class Cursor implements
      */
     private function sanitize(array $rows)
     {
-        if (isset($this->_options[self::ENTRY_SANITIZE]) and $this->_options[self::ENTRY_SANITIZE]) {
+        if (isset($this->_options[self::ENTRY_SANITIZE]) && $this->_options[self::ENTRY_SANITIZE]) {
             foreach ($rows as $key => $value) {
 
                 if (is_array($value) && isset($value[Document::ENTRY_ID])) {
@@ -619,10 +654,10 @@ class Cursor implements
     private function fetchOutstanding()
     {
         // continuation
-        $response = $this->_connection->put($this->url() . "/" . $this->_id, '', $this->buildHeaders());
+        $response = $this->_connection->put($this->url() . '/' . $this->_id, '', []);
         ++$this->_fetches;
 
-        $data     = $response->getJson();
+        $data = $response->getJson();
 
         $this->_hasMore = (bool) $data[self::ENTRY_HASMORE];
         $this->add($data[self::ENTRY_RESULT]);
@@ -633,27 +668,6 @@ class Cursor implements
         }
 
         $this->updateLength();
-    }
-
-
-    /**
-     * Build headers for the cursor requests
-     *
-     * @return array - headers used when executing further cursor fetches
-     */
-    private function buildHeaders()  
-    {
-        $result = array();
-
-        if (isset($this->_options[self::ENTRY_CUSTOM_QUEUE])) {
-            $value = $this->_options[self::ENTRY_CUSTOM_QUEUE];
-
-            if ($value != null && $value !== '') {
-                $result[HttpHelper::QUEUE_HEADER] = $this->_options[self::ENTRY_CUSTOM_QUEUE];
-            }
-        }
-
-        return $result;
     }
 
 
@@ -684,11 +698,12 @@ class Cursor implements
     }
 
     /**
-     * Return the base URL for the cursor 
+     * Return the base URL for the cursor
      *
      * @return string
      */
-    private function url() {
+    private function url()
+    {
         if (isset($this->_options[self::ENTRY_BASEURL])) {
             return $this->_options[self::ENTRY_BASEURL];
         }
@@ -696,7 +711,7 @@ class Cursor implements
         // this is the fallback
         return Urls::URL_CURSOR;
     }
-    
+
     /**
      * Get a statistical figure value from the query result
      *
@@ -704,11 +719,12 @@ class Cursor implements
      *
      * @return int
      */
-    private function getStatValue($name) 
+    private function getStatValue($name)
     {
         if (isset($this->_extra[self::ENTRY_STATS][$name])) {
             return $this->_extra[self::ENTRY_STATS][$name];
         }
+
         return 0;
     }
 
@@ -721,7 +737,7 @@ class Cursor implements
     {
         return $this->data;
     }
-    
+
     /**
      * Return the extra data of the query (statistics etc.). Contents of the result array
      * depend on the type of query executed
@@ -732,7 +748,7 @@ class Cursor implements
     {
         return $this->_extra;
     }
-    
+
     /**
      * Return the warnings issued during query execution
      *
@@ -743,7 +759,8 @@ class Cursor implements
         if (isset($this->_extra['warnings'])) {
             return $this->_extra['warnings'];
         }
-        return array();
+
+        return [];
     }
 
     /**
@@ -755,7 +772,7 @@ class Cursor implements
     {
         return $this->getStatValue('writesExecuted');
     }
-    
+
     /**
      * Return the number of ignored write operations from the query
      *
@@ -775,7 +792,7 @@ class Cursor implements
     {
         return $this->getStatValue('scannedFull');
     }
-    
+
     /**
      * Return the number of documents iterated over in index scans
      *
@@ -785,7 +802,7 @@ class Cursor implements
     {
         return $this->getStatValue('scannedIndex');
     }
-    
+
     /**
      * Return the number of documents filtered by the query
      *

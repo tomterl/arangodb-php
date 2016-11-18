@@ -17,8 +17,7 @@ namespace triagens\ArangoDb;
  *
  * If the result set is too big to be transferred in one go, the
  * cursor might issue additional HTTP requests to fetch the
- * remaining results from the server.<br>
- * <br>
+ * remaining results from the server.
  *
  * @package   triagens\ArangoDb
  * @since     2.6
@@ -94,7 +93,7 @@ class ExportCursor
      * "type" option entry (is used when converting the result into documents or edges objects)
      */
     const ENTRY_TYPE = 'type';
-    
+
     /**
      * "baseurl" option entry.
      */
@@ -107,7 +106,7 @@ class ExportCursor
      * @param array      $data       - initial result data as returned by the server
      * @param array      $options    - cursor options
      *
-     * @return Cursor
+     * @throws \triagens\ArangoDb\ClientException
      */
     public function __construct(Connection $connection, array $data, array $options)
     {
@@ -118,13 +117,13 @@ class ExportCursor
         if (isset($data[self::ENTRY_ID])) {
             $this->_id = $data[self::ENTRY_ID];
         }
-          
+
         // attribute must be there
         assert(isset($data[self::ENTRY_HASMORE]));
         $this->_hasMore = (bool) $data[self::ENTRY_HASMORE];
 
-        $this->_options   = $options;
-        $this->_result    = array();
+        $this->_options = $options;
+        $this->_result  = [];
         $this->setData((array) $data[self::ENTRY_RESULT]);
     }
 
@@ -174,14 +173,15 @@ class ExportCursor
      */
     public function getNextBatch()
     {
-        if ($this->_result === array() && $this->_hasMore) {
+        if ($this->_result === [] && $this->_hasMore) {
             // read more from server
             $this->fetchOutstanding();
         }
 
-        if ($this->_result !== array()) {
-            $result = $this->_result;
-            $this->_result = array();
+        if ($this->_result !== []) {
+            $result        = $this->_result;
+            $this->_result = [];
+
             return $result;
         }
 
@@ -195,21 +195,20 @@ class ExportCursor
      * @param array $data - incoming result
      *
      * @return void
+     * @throws \triagens\ArangoDb\ClientException
      */
     private function setData(array $data)
-    {	
-        if ((isset($this->_options[self::ENTRY_FLAT]) && $this->_options[self::ENTRY_FLAT])) {
+    {
+        if (isset($this->_options[self::ENTRY_FLAT]) && $this->_options[self::ENTRY_FLAT]) {
             $this->_result = $data;
-        }
-        else {
-            $this->_result = array();
+        } else {
+            $this->_result = [];
 
             if ($this->_options[self::ENTRY_TYPE] === Collection::TYPE_EDGE) {
                 foreach ($data as $row) {
                     $this->_result[] = Edge::createFromArray($row, $this->_options);
                 }
-            }
-            else {
+            } else {
                 foreach ($data as $row) {
                     $this->_result[] = Document::createFromArray($row, $this->_options);
                 }
@@ -227,10 +226,10 @@ class ExportCursor
     private function fetchOutstanding()
     {
         // continuation
-        $response = $this->_connection->put($this->url() . "/" . $this->_id, '');
+        $response = $this->_connection->put($this->url() . '/' . $this->_id, '');
         ++$this->_fetches;
 
-        $data     = $response->getJson();
+        $data = $response->getJson();
 
         $this->_hasMore = (bool) $data[self::ENTRY_HASMORE];
         $this->setData($data[self::ENTRY_RESULT]);
@@ -242,11 +241,12 @@ class ExportCursor
     }
 
     /**
-     * Return the base URL for the cursor 
+     * Return the base URL for the cursor
      *
      * @return string
      */
-    private function url() {
+    private function url()
+    {
         if (isset($this->_options[self::ENTRY_BASEURL])) {
             return $this->_options[self::ENTRY_BASEURL];
         }

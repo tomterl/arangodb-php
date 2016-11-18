@@ -2,31 +2,32 @@
 
 namespace triagens\ArangoDb;
 
-require dirname(__FILE__) . DIRECTORY_SEPARATOR . 'init.php';
+require __DIR__ . '/init.php';
 
 try {
     $connection = new Connection($connectionOptions);
     $handler    = new CollectionHandler($connection);
     
     if ($handler->has('example')) {
-        $handler->delete('example');
+        $handler->drop('example');
     }
     
     $col = new Collection();
     $col->setName('example');
-    $result = $handler->add($col);
+    $handler->create($col);
 
     // create a statement to insert 100 example documents
-    $statement = new Statement($connection, array(
+    $statement = new Statement($connection, [
         'query' => 'FOR i IN 1..100 INSERT { _key: CONCAT("example", i) } IN example'
-    ));
+    ]
+    );
     $statement->execute();
     
     // print number of documents
-    var_dump($handler->getCount('example'));
+    var_dump($handler->count('example'));
 
     // later on, we can assemble a list of document keys
-    $keys = array();
+    $keys = [];
     for ($i = 1; $i <= 100; ++$i) {
       $keys[] = 'example' . $i;
     }
@@ -41,7 +42,7 @@ try {
     var_dump($result);
     
     // print number of documents after bulk removal
-    var_dump($handler->getCount('example'));
+    var_dump($handler->count('example'));
 
 } catch (ConnectException $e) {
     print $e . PHP_EOL;

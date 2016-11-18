@@ -50,23 +50,21 @@ class DocumentHandler extends
      *
      * @throws Exception
      *
-     * @param string $collectionId - collection id as a string or number
-     * @param mixed $documentId   - document identifier
-     * @param array $options      - optional, array of options
+     * @param string $collection  - collection id as a string or number
+     * @param mixed  $documentId  - document identifier
+     * @param array  $options     - optional, array of options
      *                            <p>Options are :
      *                            <li>'_includeInternals' - true to include the internal attributes. Defaults to false</li>
-     *                            <li>'includeInternals' - Deprecated, please use '_includeInternals'.</li>
      *                            <li>'_ignoreHiddenAttributes' - true to show hidden attributes. Defaults to false</li>
-     *                            <li>'ignoreHiddenAttributes' - Deprecated, please use '_ignoreHiddenAttributes'.</li>
      *                            <li>'revision' - the documents revision</li>
      *                            <li>'ifMatch' - boolean if given revision should match or not</li>
      *                            </p>
      *
      * @return Document - the document fetched from the server
      */
-    public function get($collectionId, $documentId, array $options = array())
+    public function get($collection, $documentId, array $options = [])
     {
-        return $this->getById($collectionId, $documentId, $options);
+        return $this->getById($collection, $documentId, $options);
     }
 
 
@@ -78,15 +76,17 @@ class DocumentHandler extends
      *
      * @throws Exception When any other error than a 404 occurs
      *
-     * @param string $collectionId - collection id as a string or number
-     * @param mixed  $documentId   - document identifier
+     * @param string $collection - collection id as a string or number
+     * @param mixed  $documentId - document identifier
+     *
      * @return boolean
      */
-    public function has($collectionId, $documentId)
+    public function has($collection, $documentId)
     {
         try {
             // will throw ServerException if entry could not be retrieved
-            $result = $this->get($collectionId, $documentId);
+            $this->get($collection, $documentId);
+
             return true;
         } catch (ServerException $e) {
             // we are expecting a 404 to return boolean false
@@ -98,7 +98,6 @@ class DocumentHandler extends
             throw $e;
         }
 
-        return false;
     }
 
 
@@ -109,23 +108,21 @@ class DocumentHandler extends
      *
      * @throws Exception
      *
-     * @param string $collectionId - collection id as a string or number
-     * @param mixed $documentId   - document identifier
-     * @param array $options      - optional, array of options
+     * @param string $collection  - collection id as a string or number
+     * @param mixed  $documentId  - document identifier
+     * @param array  $options     - optional, array of options
      *                            <p>Options are :
      *                            <li>'_includeInternals' - true to include the internal attributes. Defaults to false</li>
-     *                            <li>'includeInternals' - Deprecated, please use '_includeInternals'.</li>
      *                            <li>'_ignoreHiddenAttributes' - true to show hidden attributes. Defaults to false</li>
-     *                            <li>'ignoreHiddenAttributes' - Deprecated, please use '_ignoreHiddenAttributes'.</li>
      *                            <li>'ifMatch' - boolean if given revision should match or not</li>
      *                            <li>'revision' - The document is returned if it matches/not matches revision.</li>
      *                            </p>
      *
      * @return Document - the document fetched from the server
      */
-    public function getById($collectionId, $documentId, array $options = array())
+    public function getById($collection, $documentId, array $options = [])
     {
-        $data = $this->getDocument(Urls::URL_DOCUMENT, $collectionId, $documentId, $options);
+        $data              = $this->getDocument(Urls::URL_DOCUMENT, $collection, $documentId, $options);
         $options['_isNew'] = false;
 
         return $this->createFromArrayWithContext($data, $options);
@@ -139,30 +136,32 @@ class DocumentHandler extends
      *
      * @throws Exception
      *
-     * @param string $url          - the server-side URL being called
-     * @param string $collectionId - collection id as a string or number
-     * @param mixed $documentId   - document identifier
-     * @param array $options      - optional, array of options
+     * @param string $url         - the server-side URL being called
+     * @param string $collection  - collection id as a string or number
+     * @param mixed  $documentId  - document identifier
+     * @param array  $options     - optional, array of options
      *                            <p>Options are :
      *                            <li>'_includeInternals' - true to include the internal attributes. Defaults to false</li>
-     *                            <li>'includeInternals' - Deprecated, please use '_includeInternals'.</li>
      *                            <li>'_ignoreHiddenAttributes' - true to show hidden attributes. Defaults to false</li>
-     *                            <li>'ignoreHiddenAttributes' - Deprecated, please use '_ignoreHiddenAttributes'.</li>
      *                            <li>'ifMatch' - boolean if given revision should match or not</li>
      *                            <li>'revision' - The document is returned if it matches/not matches revision.</li>
      *                            </p>
      *
-     * @return Document - the document fetched from the server
+     * @internal
+     *
+     * @return array - the document fetched from the server
      */
-    protected function getDocument($url, $collectionId, $documentId, array $options = array())
+    protected function getDocument($url, $collection, $documentId, array $options = [])
     {
-        $url      = UrlHelper::buildUrl($url, array($collectionId, $documentId));
-        $headerElements = array();
-        if (array_key_exists("ifMatch", $options) && array_key_exists("revision", $options)) {
-            if ($options["ifMatch"] === true) {
-                $headerElements["If-Match"] = '"' . $options["revision"] .'"';
+        $collection = $this->makeCollection($collection);
+
+        $url            = UrlHelper::buildUrl($url, [$collection, $documentId]);
+        $headerElements = [];
+        if (array_key_exists('ifMatch', $options) && array_key_exists('revision', $options)) {
+            if ($options['ifMatch'] === true) {
+                $headerElements['If-Match'] = '"' . $options['revision'] . '"';
             } else {
-                $headerElements["If-None-Match"] = '"' . $options["revision"]. '"';
+                $headerElements['If-None-Match'] = '"' . $options['revision'] . '"';
             }
         }
 
@@ -172,7 +171,7 @@ class DocumentHandler extends
             throw new ClientException('Document has not changed.');
         }
 
-        return  $response->getJson();
+        return $response->getJson();
     }
 
 
@@ -184,16 +183,16 @@ class DocumentHandler extends
      *
      * @throws Exception
      *
-     * @param string $collectionId - collection id as a string or number.
-     * @param mixed $documentId   - document identifier.
-     * @param boolean ifMatch     -  boolean if given revision should match or not.
-     * @param string revision     - The document is returned if it matches/not matches revision.
+     * @param string  $collection - collection id as a string or number.
+     * @param mixed   $documentId - document identifier.
+     * @param boolean $ifMatch    -  boolean if given revision should match or not.
+     * @param string  $revision   - The document is returned if it matches/not matches revision.
      *
      * @return array - an array containing the complete header including the key httpCode.
      */
-    public function getHead($collectionId, $documentId, $revision = null, $ifMatch = null)
+    public function getHead($collection, $documentId, $revision = null, $ifMatch = null)
     {
-        return $this->head(Urls::URL_DOCUMENT, $collectionId, $documentId, $revision, $ifMatch);
+        return $this->head(Urls::URL_DOCUMENT, $collection, $documentId, $revision, $ifMatch);
     }
 
 
@@ -204,28 +203,34 @@ class DocumentHandler extends
      *
      * @throws Exception
      *
-     * @param string $url          - the server-side URL being called
-     * @param string $collectionId - collection id as a string or number
-     * @param mixed $documentId    - document identifier
-     * @param mixed $revision      - optional document revision
-     * @param boolean ifMatch      -  boolean if given revision should match or not.
+     * @param string  $url        - the server-side URL being called
+     * @param string  $collection - collection id as a string or number
+     * @param mixed   $documentId - document identifier
+     * @param mixed   $revision   - optional document revision
+     * @param boolean $ifMatch    -  boolean if given revision should match or not.
+     *
+     * @internal
      *
      * @return array - the document meta-data
      */
-    protected function head($url, $collectionId, $documentId, $revision = null, $ifMatch = null) {
-        $url      = UrlHelper::buildUrl($url, array($collectionId, $documentId));
-        $headerElements = array();
-        if ($revision != null && $ifMatch !== null) {
+    protected function head($url, $collection, $documentId, $revision = null, $ifMatch = null)
+    {
+        $collection = $this->makeCollection($collection);
+
+        $url            = UrlHelper::buildUrl($url, [$collection, $documentId]);
+        $headerElements = [];
+        if ($revision !== null && $ifMatch !== null) {
             if ($ifMatch) {
-                $headerElements["If-Match"] = '"' . $revision .'"';
+                $headerElements['If-Match'] = '"' . $revision . '"';
             } else {
-                $headerElements["If-None-Match"] = '"' . $revision . '"';
+                $headerElements['If-None-Match'] = '"' . $revision . '"';
             }
         }
 
-        $response = $this->getConnection()->head($url, $headerElements);
-        $headers = $response->getHeaders();
-        $headers["httpCode"] = $response->getHttpCode();
+        $response            = $this->getConnection()->head($url, $headerElements);
+        $headers             = $response->getHeaders();
+        $headers['httpCode'] = $response->getHttpCode();
+
         return $headers;
     }
 
@@ -237,101 +242,13 @@ class DocumentHandler extends
      * @param $options
      *
      * @return Document
+     * @throws \triagens\ArangoDb\ClientException
      */
     protected function createFromArrayWithContext($data, $options)
     {
         return Document::createFromArray($data, $options);
     }
 
-
-    /**
-     * Get the list of all documents' ids from a collection
-     *
-     * This will throw if the list cannot be fetched from the server
-     *
-     * @throws Exception
-     *
-     * @param mixed $collectionId - collection id as string or number
-     *
-     * @return array - ids of documents in the collection
-     *
-     * @deprecated to be removed in version 2.0 - This function is being replaced by  CollectionHandler::getAllIds()
-     *
-     */
-    public function getAllIds($collectionId)
-    {
-        $collectionHandler = new CollectionHandler($this->getConnection());
-
-        return $collectionHandler->getAllIds($collectionId);
-    }
-
-
-    /**
-     * Get document(s) by specifying an example
-     *
-     * This will throw if the list cannot be fetched from the server
-     *
-     *
-     * @throws Exception
-     *
-     * @param mixed      $collectionId - collection id as string or number
-     * @param mixed      $document     - the example document as a Document object or an array
-     * @param bool|array $options      - optional, prior to v1.0.0 this was a boolean value for sanitize, since v1.0.0 it's an array of options.
-     *                                 <p>Options are :<br>
-     *                                 <li>'_sanitize' - True to remove _id and _rev attributes from result documents. Defaults to false.</li>
-     *                                 <li>'sanitize' - Deprecated, please use '_sanitize'.</li>
-     *                                 <li>'_hiddenAttributes' - Set an array of hidden attributes for created documents.
-     *                                 <li>'hiddenAttributes' - Deprecated, please use '_hiddenAttributes'.</li>
-     *                                 <p>
-     *                                 This is actually the same as setting hidden attributes using setHiddenAttributes() on a document. <br>
-     *                                 The difference is, that if you're returning a resultset of documents, the getAll() is already called <br>
-     *                                 and the hidden attributes would not be applied to the attributes.<br>
-     *                                 </p>
-     *                                 </li>
-     *                                 <li>'batchSize' - can optionally be used to tell the server to limit the number of results to be transferred in one batch</li>
-     *                                 <li>'skip' -  Optional, The number of documents to skip in the query.</li>
-     *                                 <li>'limit' -  Optional, The maximal amount of documents to return. 'skip' is applied before the limit restriction.</li>
-     *                                 </p>
-     *
-     * @return cursor - Returns a cursor containing the result
-     *
-     * @deprecated to be removed in version 2.0 - This function is being replaced by CollectionHandler::byExample()
-     */
-    public function getByExample($collectionId, $document, $options = false)
-    {
-        $collectionHandler = new CollectionHandler($this->getConnection());
-
-        return $collectionHandler->byExample($collectionId, $document, $options);
-    }
-
-
-    /**
-     * Add a document to a collection
-     *
-     * This will add the document to the collection and return the document's id
-     *
-     * This will throw if the document cannot be created
-     *
-     * @throws Exception
-     *
-     * @param mixed      $collectionId - collection id as string or number
-     * @param Document   $document     - the document to be added
-     * @param bool|array $options      - optional, prior to v1.2.0 this was a boolean value for create. Since v1.0.0 it's an array of options.
-     *                                 <p>Options are :<br>
-     *                                 <li>'create' - create the collection if it does not yet exist.</li>
-     *                                 <li>'waitForSync' -  if set to true, then all removal operations will instantly be synchronised to disk / If this is not specified, then the collection's default sync behavior will be applied.</li>
-     *                                 </p>
-     *
-     * @return mixed - id of document created
-     *
-     * @deprecated to be removed in version 2.0 - This function is being replaced by save()
-     *
-     */
-
-    public function add($collectionId, Document $document, $options = array())
-    {
-        return $this->save($collectionId, $document, $options);
-    }
 
     /**
      * Store a document to a collection
@@ -343,32 +260,32 @@ class DocumentHandler extends
      *
      * @throws Exception
      *
-     * @param Document   $document     - the document to be added, can be passed as a document or an array
-     * @param mixed      $collectionId - collection id as string or number
-     * @param bool|array $options      - optional, prior to v1.2.0 this was a boolean value for create. Since v1.2.0 it's an array of options.
+     * @param Document $document       - the document to be added, can be passed as a document or an array
+     * @param mixed    $collection     - collection id as string or number
+     * @param array    $options        - optional, array of options
      *                                 <p>Options are :<br>
-     *                                 <li>'create' - create the collection if it does not yet exist.</li>
+     *                                 <li>'createCollection' - create the collection if it does not yet exist.</li>
      *                                 <li>'waitForSync' -  if set to true, then all removal operations will instantly be synchronised to disk / If this is not specified, then the collection's default sync behavior will be applied.</li>
      *                                 </p>
      *
      * @return mixed - id of document created
      * @since 1.0
      */
-    public function store(Document $document, $collectionId = null, $options = array())
+    public function store(Document $document, $collection = null, array $options = [])
     {
         if ($document->getIsNew()) {
 
-            if ($collectionId == null) {
+            if ($collection === null) {
                 throw new ClientException('A collection id is required to store a new document.');
             }
 
-            $result = $this->save($collectionId, $document, $options);
+            $result = $this->save($collection, $document, $options);
             $document->setIsNew(false);
 
             return $result;
         } else {
 
-            if ($collectionId) {
+            if ($collection) {
                 throw new ClientException('An existing document cannot be stored into a new collection');
             }
 
@@ -386,61 +303,65 @@ class DocumentHandler extends
      *
      * @throws Exception
      *
-     * @param mixed      $collectionId - collection id as string or number
-     * @param mixed      $document     - the document to be added, can be passed as a document or an array
-     * @param bool|array $options      - optional, prior to v1.2.0 this was a boolean value for create. Since v1.0.0 it's an array of options.
-     *                                 <p>Options are :<br>
-     *                                 <li>'create' - create the collection if it does not yet exist.</li>
-     *                                 <li>'waitForSync' -  if set to true, then all removal operations will instantly be synchronised to disk / If this is not specified, then the collection's default sync behavior will be applied.</li>
-     *                                 </p>
+     * @param mixed          $collection - collection id as string or number
+     * @param Document|array $document   - the document to be added, can be passed as a document or an array
+     * @param array          $options    - optional, array of options
+     *                                   <p>Options are :<br>
+     *                                   <li>'createCollection' - create the collection if it does not yet exist.</li>
+     *                                   <li>'waitForSync' -  if set to true, then all removal operations will instantly be synchronised to disk / If this is not specified, then the collection's default sync behavior will be applied.</li>
+     *                                   </p>
      *
      * @return mixed - id of document created
      * @since 1.0
      */
-    public function save($collectionId, $document, $options = array())
+    public function save($collection, $document, array $options = [])
     {
-        if ($collectionId instanceof Collection) {
-            $collectionId = $collectionId->getName();
-        } 
-        // This preserves compatibility for the old create parameter.
-        $params = array(self::OPTION_COLLECTION => $collectionId);
-        $params = $this->validateAndIncludeOldSingleParameterInParams(
-                       $options,
-                       $params,
-                       ConnectionOptions::OPTION_CREATE
-        );
+        $collection = $this->makeCollection($collection);
 
         $params = $this->includeOptionsInParams(
-                       $options,
-                       $params,
-                       array(
-                            ConnectionOptions::OPTION_WAIT_SYNC => $this->getConnectionOption(
-                                                                        ConnectionOptions::OPTION_WAIT_SYNC
-                                ),
-                       )
+            $options, [
+                'waitForSync'      => null,
+                'silent'           => false,
+                'createCollection' => $this->getConnection()->getOption(ConnectionOptions::OPTION_CREATE)
+            ]
         );
 
-        if (is_array($document)) {
-            $document = Document::createFromArray($document);
-        }
-        $data = $document->getAll();
+        $this->createCollectionIfOptions($collection, $params);
 
-        $url = UrlHelper::appendParamsUrl(Urls::URL_DOCUMENT, $params);
+        $url = UrlHelper::appendParamsUrl(Urls::URL_DOCUMENT . '/' . $collection, $params);
+
+        if (is_array($document)) {
+            $data = $document;
+        } else {
+            $data = $document->getAllForInsertUpdate();
+        }
 
         $response = $this->getConnection()->post($url, $this->json_encode_wrapper($data));
+        $json     = $response->getJson();
+
+        // This makes sure that if we're in batch mode, it will not go further and choke on the checks below.
+        // Caution: Instead of a document ID, we are returning the batchpart object
+        // The Id of the BatchPart can be retrieved by calling getId() on it.
+        // We're basically returning an object here, in order not to accidentally use the batch part id as the document id
+        if ($batchPart = $response->getBatchPart()) {
+            return $batchPart;
+        }
+
+        if (is_array($document)) {
+            return $json[Document::ENTRY_KEY];
+        }
 
         $location = $response->getLocationHeader();
         if (!$location) {
             throw new ClientException('Did not find location header in server response');
         }
 
-        $json = $response->getJson();
-        $id   = UrlHelper::getDocumentIdFromLocation($location);
+        $id = UrlHelper::getDocumentIdFromLocation($location);
 
         $document->setInternalId($json[Document::ENTRY_ID]);
         $document->setRevision($json[Document::ENTRY_REV]);
 
-        if ($id != $document->getId()) {
+        if ($id !== $document->getId()) {
             throw new ClientException('Got an invalid response from the server');
         }
 
@@ -448,7 +369,6 @@ class DocumentHandler extends
 
         return $document->getId();
     }
-
 
     /**
      * Update an existing document in a collection, identified by the including _id and optionally _rev in the patch document.
@@ -465,7 +385,7 @@ class DocumentHandler extends
      * @throws Exception
      *
      * @param Document $document - The patch document that will update the document in question
-     * @param mixed    $options  - optional, array of options (see below) or the boolean value for $policy (for compatibility prior to version 1.1 of this method)
+     * @param array    $options  - optional, array of options
      *                           <p>Options are :
      *                           <li>'policy' - update policy to be used in case of conflict ('error', 'last' or NULL [use default])</li>
      *                           <li>'keepNull' - can be used to instruct ArangoDB to delete existing attributes instead setting their values to null. Defaults to true (keep attributes when set to null)</li>
@@ -474,12 +394,11 @@ class DocumentHandler extends
      *
      * @return bool - always true, will throw if there is an error
      */
-    public function update(Document $document, $options = array())
+    public function update(Document $document, array $options = [])
     {
-        $collectionId = $this->getCollectionId($document);
-        $documentId   = $this->getDocumentId($document);
+        $documentId = $this->getDocumentId($document);
 
-        return $this->updateById($collectionId, $documentId, $document, $options);
+        return $this->updateById($document, $documentId, $document, $options);
     }
 
 
@@ -497,10 +416,10 @@ class DocumentHandler extends
      *
      * @throws Exception
      *
-     * @param string    $collectionId - collection id as string or number
+     * @param string   $collection   - collection id as string or number
      * @param mixed    $documentId   - document id as string or number
      * @param Document $document     - patch document which contains the attributes and values to be updated
-     * @param mixed    $options      - optional, array of options (see below) or the boolean value for $policy (for compatibility prior to version 1.1 of this method)
+     * @param array    $options      - optional, array of options
      *                               <p>Options are :
      *                               <li>'policy' - update policy to be used in case of conflict ('error', 'last' or NULL [use default])</li>
      *                               <li>'keepNull' - can be used to instruct ArangoDB to delete existing attributes instead setting their values to null. Defaults to true (keep attributes when set to null)</li>
@@ -509,9 +428,9 @@ class DocumentHandler extends
      *
      * @return bool - always true, will throw if there is an error
      */
-    public function updateById($collectionId, $documentId, Document $document, $options = array())
+    public function updateById($collection, $documentId, Document $document, array $options = [])
     {
-        return $this->patch(Urls::URL_DOCUMENT, $collectionId, $documentId, $document, $options);
+        return $this->patch(Urls::URL_DOCUMENT, $collection, $documentId, $document, $options);
     }
 
 
@@ -521,48 +440,51 @@ class DocumentHandler extends
      * @throws Exception
      *
      * @param string   $url          - server-side URL being called
-     * @param string   $collectionId - collection id as string or number
+     * @param string   $collection   - collection id as string or number
      * @param mixed    $documentId   - document id as string or number
      * @param Document $document     - patch document which contains the attributes and values to be updated
-     * @param mixed    $options      - optional, array of options (see below) or the boolean value for $policy (for compatibility prior to version 1.1 of this method)
+     * @param array    $options      - optional, array of options
      *                               <p>Options are :
      *                               <li>'policy' - update policy to be used in case of conflict ('error', 'last' or NULL [use default])</li>
      *                               <li>'keepNull' - can be used to instruct ArangoDB to delete existing attributes instead setting their values to null. Defaults to true (keep attributes when set to null)</li>
      *                               <li>'waitForSync' - can be used to force synchronisation of the document update operation to disk even in case that the waitForSync flag had been disabled for the entire collection</li>
      *                               </p>
      *
+     * @internal
+     *
      * @return bool - always true, will throw if there is an error
      */
-    protected function patch($url, $collectionId, $documentId, Document $document, $options = array())
+    protected function patch($url, $collection, $documentId, Document $document, array $options = [])
     {
-        if ($collectionId instanceof Collection) {
-            $collectionId = $collectionId->getName();
-        }
- 
-        // This preserves compatibility for the old policy parameter.
-        $params = array();
-        $params = $this->validateAndIncludeOldSingleParameterInParams(
-            $options,
-            $params,
-            ConnectionOptions::OPTION_UPDATE_POLICY
-        );
+        $collection = $this->makeCollection($collection);
+
         $params = $this->includeOptionsInParams(
-            $options,
-            $params,
-            array(
+            $options, [
                 'waitForSync' => $this->getConnectionOption(ConnectionOptions::OPTION_WAIT_SYNC),
                 'keepNull'    => true,
-            )
+                'silent'      => false,
+                'ignoreRevs'  => true,
+                'policy'      => $this->getConnectionOption(ConnectionOptions::OPTION_UPDATE_POLICY)
+            ]
         );
 
-        $revision = $document->getRevision();
-        if (!is_null($revision)) {
-            $params[ConnectionOptions::OPTION_REVISION] = $revision;
+
+        $headers = [];
+        if (isset($params[ConnectionOptions::OPTION_UPDATE_POLICY]) &&
+            $params[ConnectionOptions::OPTION_UPDATE_POLICY] === UpdatePolicy::ERROR
+        ) {
+
+            $revision = $document->getRevision();
+            if (null !== $revision) {
+                $params['ignoreRevs'] = false;
+                $headers['if-match']  = '"' . $revision . '"';
+            }
         }
 
-        $url    = UrlHelper::buildUrl($url, array($collectionId, $documentId));
-        $url    = UrlHelper::appendParamsUrl($url, $params);
-        $result = $this->getConnection()->patch($url, $this->json_encode_wrapper($document->getAll()));
+        $url = UrlHelper::buildUrl($url, [$collection, $documentId]);
+        $url = UrlHelper::appendParamsUrl($url, $params);
+
+        $result = $this->getConnection()->patch($url, $this->json_encode_wrapper($document->getAllForInsertUpdate()), $headers);
         $json   = $result->getJson();
         $document->setRevision($json[Document::ENTRY_REV]);
 
@@ -584,7 +506,7 @@ class DocumentHandler extends
      * @throws Exception
      *
      * @param Document $document - document to be updated
-     * @param mixed    $options  - optional, array of options (see below) or the boolean value for $policy (for compatibility prior to version 1.1 of this method)
+     * @param array    $options  - optional, array of options
      *                           <p>Options are :
      *                           <li>'policy' - update policy to be used in case of conflict ('error', 'last' or NULL [use default])</li>
      *                           <li>'waitForSync' - can be used to force synchronisation of the document update operation to disk even in case that the waitForSync flag had been disabled for the entire collection</li>
@@ -592,12 +514,11 @@ class DocumentHandler extends
      *
      * @return bool - always true, will throw if there is an error
      */
-    public function replace(Document $document, $options = array())
+    public function replace(Document $document, array $options = [])
     {
-        $collectionId = $this->getCollectionId($document);
-        $documentId   = $this->getDocumentId($document);
+        $documentId = $this->getDocumentId($document);
 
-        return $this->replaceById($collectionId, $documentId, $document, $options);
+        return $this->replaceById($document, $documentId, $document, $options);
     }
 
 
@@ -614,10 +535,10 @@ class DocumentHandler extends
      *
      * @throws Exception
      *
-     * @param mixed    $collectionId - collection id as string or number
+     * @param mixed    $collection   - collection id as string or number
      * @param mixed    $documentId   - document id as string or number
      * @param Document $document     - document to be updated
-     * @param mixed    $options      - optional, array of options (see below) or the boolean value for $policy (for compatibility prior to version 1.1 of this method)
+     * @param array    $options      - optional, array of options
      *                               <p>Options are :
      *                               <li>'policy' - update policy to be used in case of conflict ('error', 'last' or NULL [use default])</li>
      *                               <li>'waitForSync' - can be used to force synchronisation of the document replacement operation to disk even in case that the waitForSync flag had been disabled for the entire collection</li>
@@ -625,83 +546,64 @@ class DocumentHandler extends
      *
      * @return bool - always true, will throw if there is an error
      */
-    public function replaceById($collectionId, $documentId, Document $document, $options = array())
+    public function replaceById($collection, $documentId, Document $document, array $options = [])
     {
-        return $this->put(Urls::URL_DOCUMENT, $collectionId, $documentId, $document, $options);
+        return $this->put(Urls::URL_DOCUMENT, $collection, $documentId, $document, $options);
     }
-   
-    
+
+
     /**
      * Replace an existing document in a collection (internal method)
      *
      * @throws Exception
      *
      * @param string   $url          - the server-side URL being called
-     * @param string   $collectionId - collection id as string or number
+     * @param string   $collection   - collection id as string or number
      * @param mixed    $documentId   - document id as string or number
      * @param Document $document     - document to be updated
-     * @param mixed    $options      - optional, array of options (see below) or the boolean value for $policy (for compatibility prior to version 1.1 of this method)
+     * @param array    $options      - optional, array of options
      *                               <p>Options are :
      *                               <li>'policy' - update policy to be used in case of conflict ('error', 'last' or NULL [use default])</li>
      *                               <li>'waitForSync' - can be used to force synchronisation of the document replacement operation to disk even in case that the waitForSync flag had been disabled for the entire collection</li>
-     *                               </p>
+     *                               <li>'ifMatch' - boolean if given revision should match or not</li>
+     *                               <li>'revision' - The document is returned if it matches/not matches revision.</li></p>
+     *
+     * @internal
      *
      * @return bool - always true, will throw if there is an error
      */
-    protected function put($url, $collectionId, $documentId, Document $document, $options = array())
+    protected function put($url, $collection, $documentId, Document $document, array $options = [])
     {
-        if ($collectionId instanceof Collection) {
-            $collectionId = $collectionId->getName();
-        }
- 
-        // This preserves compatibility for the old policy parameter.
-        $params = array();
-        $params = $this->validateAndIncludeOldSingleParameterInParams(
-            $options,
-            $params,
-            ConnectionOptions::OPTION_REPLACE_POLICY
-        );
+        $collection = $this->makeCollection($collection);
+
         $params = $this->includeOptionsInParams(
-            $options,
-            $params,
-            array('waitForSync' => ConnectionOptions::OPTION_WAIT_SYNC)
+            $options, [
+                'waitForSync' => $this->getConnectionOption(ConnectionOptions::OPTION_WAIT_SYNC),
+                'silent'      => false,
+                'ignoreRevs'  => true,
+                'policy'      => $this->getConnectionOption(ConnectionOptions::OPTION_REPLACE_POLICY)
+            ]
         );
 
-        $revision = $document->getRevision();
-        if (!is_null($revision)) {
-            $params[ConnectionOptions::OPTION_REVISION] = $revision;
+        $headers = [];
+        if (isset($params[ConnectionOptions::OPTION_REPLACE_POLICY]) &&
+            $params[ConnectionOptions::OPTION_REPLACE_POLICY] === UpdatePolicy::ERROR
+        ) {
+            if (null !== $options['revision']) {
+                $params['ignoreRevs'] = false;
+                $headers['if-match']  = '"' . $options['revision'] . '"';
+            }
         }
 
-        $data   = $document->getAll();
-        $url    = UrlHelper::buildUrl($url, array($collectionId, $documentId));
+        $data = $document->getAllForInsertUpdate();
+
+        $url    = UrlHelper::buildUrl($url, [$collection, $documentId]);
         $url    = UrlHelper::appendParamsUrl($url, $params);
-        $result = $this->getConnection()->put($url, $this->json_encode_wrapper($data));
+        $result = $this->getConnection()->put($url, $this->json_encode_wrapper($data), $headers);
         $json   = $result->getJson();
         $document->setRevision($json[Document::ENTRY_REV]);
 
         return true;
-    }
-
-    /**
-     * Delete a document from a collection, identified by the document itself
-     *
-     * @throws Exception
-     *
-     * @param Document $document - document to be updated
-     * @param mixed    $options  - optional, array of options (see below) or the boolean value for $policy (for compatibility prior to version 1.1 of this method)
-     *                           <p>Options are :
-     *                           <li>'policy' - update policy to be used in case of conflict ('error', 'last' or NULL [use default])</li>
-     *                           <li>'waitForSync' - can be used to force synchronisation of the document replacement operation to disk even in case that the waitForSync flag had been disabled for the entire collection</li>
-     *                           </p>
-     *
-     * @return bool - always true, will throw if there is an error
-     *
-     * @deprecated to be removed in version 2.0 - This function is being replaced by remove()
-     *
-     */
-    public function delete(Document $document, $options = array())
-    {
-        return $this->remove($document, $options);
     }
 
 
@@ -711,7 +613,7 @@ class DocumentHandler extends
      * @throws Exception
      *
      * @param Document $document - document to be removed
-     * @param mixed    $options  - optional, array of options (see below) or the boolean value for $policy (for compatibility prior to version 1.1 of this method)
+     * @param array    $options  - optional, array of options
      *                           <p>Options are :
      *                           <li>'policy' - update policy to be used in case of conflict ('error', 'last' or NULL [use default])</li>
      *                           <li>'waitForSync' - can be used to force synchronisation of the document removal operation to disk even in case that the waitForSync flag had been disabled for the entire collection</li>
@@ -719,40 +621,13 @@ class DocumentHandler extends
      *
      * @return bool - always true, will throw if there is an error
      */
-    public function remove(Document $document, $options = array())
+    public function remove(Document $document, array $options = [])
     {
-        $collectionId = $this->getCollectionId($document);
-        $documentId   = $this->getDocumentId($document);
+        $documentId = $this->getDocumentId($document);
 
         $revision = $this->getRevision($document);
 
-        return $this->deleteById($collectionId, $documentId, $revision, $options);
-    }
-
-
-    /**
-     * Delete a document from a collection, identified by the collection id and document id
-     *
-     * @throws Exception
-     *
-     * @param string $collectionId - collection id as string or number
-     * @param mixed  $documentId   - document id as string or number
-     * @param  mixed $revision     - optional revision of the document to be deleted
-     * @param mixed  $options      - optional, array of options (see below) or the boolean value for $policy (for compatibility prior to version 1.1 of this method)
-     *                             <p>Options are :
-     *                             <li>'policy' - update policy to be used in case of conflict ('error', 'last' or NULL [use default])</li>
-     *                             <li>'waitForSync' - can be used to force synchronisation of the document replacement operation to disk even in case that the waitForSync flag had been disabled for the entire collection</li>
-     *                             </p>
-     *
-     * @return bool - always true, will throw if there is an error
-     *
-     * @deprecated to be removed in version 2.0 - This function is being replaced by removeById()
-     */
-    public function deleteById($collectionId, $documentId, $revision = null, $options = array())
-    {
-        $this->removeById($collectionId, $documentId, $revision, $options);
-
-        return true;
+        return $this->removeById($document, $documentId, $revision, $options);
     }
 
 
@@ -761,10 +636,10 @@ class DocumentHandler extends
      *
      * @throws Exception
      *
-     * @param mixed  $collectionId - collection id as string or number
-     * @param mixed  $documentId   - document id as string or number
-     * @param  mixed $revision     - optional revision of the document to be deleted
-     * @param mixed  $options      - optional, array of options (see below) or the boolean value for $policy (for compatibility prior to version 1.1 of this method)
+     * @param mixed $collection    - collection id as string or number
+     * @param mixed $documentId    - document id as string or number
+     * @param mixed $revision      - optional revision of the document to be deleted
+     * @param array $options       - optional, array of options
      *                             <p>Options are :
      *                             <li>'policy' - update policy to be used in case of conflict ('error', 'last' or NULL [use default])</li>
      *                             <li>'waitForSync' - can be used to force synchronisation of the document removal operation to disk even in case that the waitForSync flag had been disabled for the entire collection</li>
@@ -772,55 +647,58 @@ class DocumentHandler extends
      *
      * @return bool - always true, will throw if there is an error
      */
-    public function removeById($collectionId, $documentId, $revision = null, $options = array())
+    public function removeById($collection, $documentId, $revision = null, array $options = [])
     {
-       return $this->erase(Urls::URL_DOCUMENT, $collectionId, $documentId, $revision, $options);
+        return $this->erase(Urls::URL_DOCUMENT, $collection, $documentId, $revision, $options);
     }
 
-    
+
     /**
      * Remove a document from a collection (internal method)
      *
      * @throws Exception
      *
      * @param string $url          - the server-side URL being called
-     * @param string $collectionId - collection id as string or number
+     * @param string $collection   - collection id as string or number
      * @param mixed  $documentId   - document id as string or number
-     * @param mixed $revision      - optional revision of the document to be deleted
-     * @param mixed  $options      - optional, array of options (see below) or the boolean value for $policy (for compatibility prior to version 1.1 of this method)
+     * @param mixed  $revision     - optional revision of the document to be deleted
+     * @param array  $options      - optional, array of options
      *                             <p>Options are :
      *                             <li>'policy' - update policy to be used in case of conflict ('error', 'last' or NULL [use default])</li>
      *                             <li>'waitForSync' - can be used to force synchronisation of the document removal operation to disk even in case that the waitForSync flag had been disabled for the entire collection</li>
      *                             </p>
      *
+     * @internal
+     *
      * @return bool - always true, will throw if there is an error
      */
-    protected function erase($url, $collectionId, $documentId, $revision = null, $options = array())
+    protected function erase($url, $collection, $documentId, $revision = null, array $options = [])
     {
-        if ($collectionId instanceof Collection) {
-            $collectionId = $collectionId->getName();
-        }
- 
-        // This preserves compatibility for the old policy parameter.
-        $params = array();
-        $params = $this->validateAndIncludeOldSingleParameterInParams(
-            $options,
-            $params,
-            ConnectionOptions::OPTION_DELETE_POLICY
-        );
+        $collection = $this->makeCollection($collection);
+
         $params = $this->includeOptionsInParams(
-            $options,
-            $params,
-            array('waitForSync' => ConnectionOptions::OPTION_WAIT_SYNC)
+            $options, [
+                'waitForSync' => $this->getConnectionOption(ConnectionOptions::OPTION_WAIT_SYNC),
+                'silent'      => false,
+                'ignoreRevs'  => true,
+                'policy'      => $this->getConnectionOption(ConnectionOptions::OPTION_DELETE_POLICY)
+            ]
         );
 
-        if (!is_null($revision)) {
-            $params[ConnectionOptions::OPTION_REVISION] = $revision;
+        $headers = [];
+        if (isset($params[ConnectionOptions::OPTION_DELETE_POLICY]) &&
+            $params[ConnectionOptions::OPTION_DELETE_POLICY] === UpdatePolicy::ERROR
+        ) {
+
+            if (null !== $revision) {
+                $params['ignoreRevs'] = false;
+                $headers['if-match']  = '"' . $revision . '"';
+            }
         }
 
-        $url = UrlHelper::buildUrl($url, array($collectionId, $documentId));
+        $url = UrlHelper::buildUrl($url, [$collection, $documentId]);
         $url = UrlHelper::appendParamsUrl($url, $params);
-        $this->getConnection()->delete($url);
+        $this->getConnection()->delete($url, $headers);
 
         return true;
     }
@@ -837,13 +715,12 @@ class DocumentHandler extends
      */
     private function getDocumentId($document)
     {
+        $documentId = $document;
         if ($document instanceof Document) {
             $documentId = $document->getId();
-        } else {
-            $documentId = $document;
         }
 
-        if (trim($documentId) === "" || !(is_string($documentId) || is_double($documentId) || is_int($documentId))) {
+        if (!(is_int($documentId) || is_string($documentId) || is_float($documentId) || trim($documentId) === '')) {
             throw new ClientException('Cannot alter a document without a document id');
         }
 
@@ -862,33 +739,48 @@ class DocumentHandler extends
      */
     private function getRevision($document)
     {
+        $revision = null;
+
         if ($document instanceof Document) {
             $revision = $document->getRevision();
-        } else {
-            $revision = null;
         }
 
         return $revision;
     }
 
-
     /**
-     * Helper function to get a collection id from a document
-     *
-     * @throws ClientException
-     *
-     * @param Document $document - document id
-     *
-     * @return mixed - collection id, will throw if there is an error
+     * @param       $collection   mixed collection name or id
+     * @param array $options      - optional, array of options
+     *                            <p>Options are :
+     *                            <li>'createCollection' - true to create the collection if it does not exist</li>
+     *                            <li>'createCollectionType' - "document" or 2 for document collection</li>
+     *                            <li>                         "edge" or 3 for edge collection</li>
+     *                            </p>
      */
-    private function getCollectionId(Document $document)
+    protected function createCollectionIfOptions($collection, $options)
     {
-        $collectionId = $document->getCollectionId();
-
-        if (!$collectionId || !(is_string($collectionId) || is_double($collectionId) || is_int($collectionId))) {
-            throw new ClientException('Cannot alter a document without a document id');
+        if (!array_key_exists(CollectionHandler::OPTION_CREATE_COLLECTION, $options)) {
+            return;
         }
 
-        return $collectionId;
+        $value = (bool) $options[CollectionHandler::OPTION_CREATE_COLLECTION];
+
+        if (!$value) {
+            return;
+        }
+
+        $collectionHandler = new CollectionHandler($this->getConnection());
+
+        if (array_key_exists('createCollectionType', $options)) {
+            $options['type'] = $options['createCollectionType'];
+            unset($options['createCollectionType']);
+        }
+        unset($options['createCollection']);
+        try {
+            // attempt to create the collection
+            $collectionHandler->create($collection, $options);
+        } catch (Exception $e) {
+            // collection may have existed already
+        }
     }
 }

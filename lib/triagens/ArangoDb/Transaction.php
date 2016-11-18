@@ -62,14 +62,14 @@ class Transaction
      *
      * @var Connection
      */
-    private $_connection = null;
+    private $_connection;
 
     /**
      * The transaction's attributes.
      *
      * @var array
      */
-    protected $attributes = array();
+    protected $attributes = [];
 
     /**
      * Collections index
@@ -106,6 +106,10 @@ class Transaction
      */
     const ENTRY_WRITE = 'write';
 
+    /**
+     * @var $_action string The action property of the transaction.
+     */
+    protected $_action;
 
     /**
      * Initialise the transaction object
@@ -128,7 +132,7 @@ class Transaction
      * @param Connection $connection       - the connection to be used
      * @param array      $transactionArray - transaction initialization data
      *
-     * @return \triagens\ArangoDb\Transaction
+     * @throws \triagens\ArangoDb\ClientException
      */
     public function __construct(Connection $connection, array $transactionArray = null)
     {
@@ -151,8 +155,8 @@ class Transaction
     public function execute()
     {
         $response      = $this->_connection->post(
-                                           Urls::URL_TRANSACTION,
-                                           $this->getConnection()->json_encode_wrapper($this->attributes)
+            Urls::URL_TRANSACTION,
+            $this->getConnection()->json_encode_wrapper($this->attributes)
         );
         $responseArray = $response->getJson();
         if (isset($responseArray['result'])) {
@@ -210,6 +214,8 @@ class Transaction
      * set action value
      *
      * @param string $value
+     *
+     * @throws \triagens\ArangoDb\ClientException
      */
     public function setAction($value)
     {
@@ -232,6 +238,8 @@ class Transaction
      * set waitForSync value
      *
      * @param bool $value
+     *
+     * @throws \triagens\ArangoDb\ClientException
      */
     public function setWaitForSync($value)
     {
@@ -254,6 +262,8 @@ class Transaction
      * Set lockTimeout value
      *
      * @param int $value
+     *
+     * @throws \triagens\ArangoDb\ClientException
      */
     public function setLockTimeout($value)
     {
@@ -276,6 +286,8 @@ class Transaction
      * Set params value
      *
      * @param array $value
+     *
+     * @throws \triagens\ArangoDb\ClientException
      */
     public function setParams(array $value)
     {
@@ -370,6 +382,8 @@ class Transaction
      *
      * @throws ClientException
      *
+     * @magic
+     *
      * @param string $key   - attribute name
      * @param mixed  $value - value for attribute
      *
@@ -437,6 +451,8 @@ class Transaction
      *
      * This function is mapped to get() internally.
      *
+     * @magic
+     *
      * @param string $key - name of attribute
      *
      * @return mixed - value of attribute, NULL if attribute is not set
@@ -448,7 +464,26 @@ class Transaction
 
 
     /**
+     * Is triggered by calling isset() or empty() on inaccessible properties.
+     *
+     * @param string $key - name of attribute
+     *
+     * @return boolean returns true or false (set or not set)
+     */
+    public function __isset($key)
+    {
+        if (isset($this->attributes[$key])) {
+            return true;
+        }
+
+        return false;
+    }
+
+
+    /**
      * Returns the action string
+     *
+     * @magic
      *
      * @return string - the current action string
      */
@@ -462,6 +497,8 @@ class Transaction
      * Build the object's attributes from a given array
      *
      * @param $options
+     *
+     * @throws \triagens\ArangoDb\ClientException
      */
     public function buildTransactionAttributesFromArray($options)
     {

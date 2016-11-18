@@ -17,7 +17,6 @@ namespace triagens\ArangoDb;
  * persistent connection and keep its state.<br>
  * Instead, connections are established on the fly for each request
  * and are destroyed afterwards.<br>
- * <br>
  *
  * @package   triagens\ArangoDb
  * @since     0.2
@@ -25,18 +24,31 @@ namespace triagens\ArangoDb;
 class Connection
 {
     /**
-     * Api Version
-     *
-     * @var string
-     */
-    public static $_apiVersion = 20200;
-
-    /**
      * Connection options
      *
      * @var array
      */
     private $_options;
+
+    /**
+     * Pre-assembled HTTP headers string for connection
+     * This is pre-calculated when connection options are set/changed, to avoid
+     * calculation of the same HTTP header values in each request done via the
+     * connection
+     *
+     * @var string
+     */
+    private $_httpHeader = '';
+
+    /**
+     * Pre-assembled base URL for the current database
+     * This is pre-calculated when connection options are set/changed, to avoid
+     * calculation of the same base URL in each request done via the
+     * connection
+     *
+     * @var string
+     */
+    private $_baseUrl = '';
 
     /**
      * Connection handle, used in case of keep-alive
@@ -57,14 +69,14 @@ class Connection
      *
      * @var array
      */
-    private $_batches = array();
+    private $_batches = [];
 
     /**
      * $_activeBatch object
      *
-     * @var array
+     * @var Batch
      */
-    private $_activeBatch = null;
+    private $_activeBatch;
 
     /**
      * $_captureBatch boolean
@@ -81,13 +93,6 @@ class Connection
     private $_batchRequest = false;
 
     /**
-     * custom queue name (leave empty if no custom queue is required)
-     *
-     * @var string
-     */
-    private $_customQueue = null;
-
-    /**
      * $_database string
      *
      * @var string
@@ -101,13 +106,14 @@ class Connection
      *
      * @param array $options - initial connection options
      *
-     * @return Connection
      */
     public function __construct(array $options)
     {
         $this->_options      = new ConnectionOptions($options);
         $this->_useKeepAlive = ($this->_options[ConnectionOptions::OPTION_CONNECTION] === 'Keep-Alive');
         $this->setDatabase($this->_options[ConnectionOptions::OPTION_DATABASE]);
+
+        $this->updateHttpHeader();
     }
 
     /**
@@ -120,6 +126,56 @@ class Connection
         if ($this->_useKeepAlive && is_resource($this->_handle)) {
             @fclose($this->_handle);
         }
+    }
+
+    /**
+     * Set an option set for the connection
+     *
+     * @throws ClientException
+     *
+     * @param string $name  - name of option
+     * @param string $value - value of option
+     */
+    public function setOption($name, $value)
+    {
+        if ($name === ConnectionOptions::OPTION_ENDPOINT ||
+            $name === ConnectionOptions::OPTION_HOST ||
+            $name === ConnectionOptions::OPTION_PORT ||
+            $name === ConnectionOptions::OPTION_VERIFY_CERT ||
+            $name === ConnectionOptions::OPTION_CIPHERS ||
+            $name === ConnectionOptions::OPTION_ALLOW_SELF_SIGNED
+        ) {
+            throw new ClientException('Must not set option ' . $value . ' after connection is created.');
+        }
+
+        $this->_options[$name] = $value;
+
+        // special handling for several options
+        if ($name === ConnectionOptions::OPTION_TIMEOUT) {
+            // set the timeout option: patch the stream of an existing connection
+            if (is_resource($this->_handle)) {
+                stream_set_timeout($this->_handle, $value);
+            }
+        } else if ($name === ConnectionOptions::OPTION_CONNECTION) {
+            // set keep-alive flag
+            $this->_useKeepAlive = (strtolower($value) === 'keep-alive');
+        } else if ($name === ConnectionOptions::OPTION_DATABASE) {
+            // set database
+            $this->setDatabase($value);
+        }
+
+        $this->updateHttpHeader();
+    }
+
+        
+    /**
+     * Get the options set for the connection
+     *
+     * @return ConnectionOptions
+     */
+    public function getOptions()
+    {
+        return $this->_options;
     }
 
     /**
@@ -138,75 +194,6 @@ class Connection
         return $this->_options[$name];
     }
 
-    /**
-     * Set an option set for the connection
-     *
-     * @throws ClientException
-     *
-     * @param string $name - name of option
-     * @param string $value - value of option
-     */
-    public function setOption($name, $value) {
-        if ($name === ConnectionOptions::OPTION_ENDPOINT ||
-            $name === ConnectionOptions::OPTION_HOST ||
-            $name === ConnectionOptions::OPTION_PORT) {
-            throw new ClientException('Must not set option ' . $value . ' after connection is created.');
-        }
-
-        $this->_options[$name] = $value;
-
-        // special handling for several options
-        if ($name === ConnectionOptions::OPTION_TIMEOUT) {
-            // set the timeout option: patch the stream of an existing connection
-            if (is_resource($this->_handle)) {
-                stream_set_timeout($this->_handle, $value); 
-            }
-        }
-        else if ($name === ConnectionOptions::OPTION_CONNECTION) {
-          // set keep-alive flag
-          $this->_useKeepAlive = (strtolower($value) === 'keep-alive');
-        }
-        else if ($name === ConnectionOptions::OPTION_DATABASE) {
-          // set database
-          $this->setDatabase($value);
-        }
-    }
-
-
-        
-    /**
-     * Enables a custom queue name for all actions of the connection
-     *
-     * @param string $queueName - queue name
-     * @param number $count - number of requests the custom queue will be used for
-     * @internal this method is currently experimental. whether or not it will 
-     *           become part of the official API needs decision
-     */
-
-    public function enableCustomQueue($queueName, $count = null) 
-    {
-        $this->_options[ConnectionOptions::OPTION_CUSTOM_QUEUE] = $queueName;
-
-        if ($count !== null) {
-            if (! is_numeric($count) || $count <= 0) {
-                throw new ClientException('Invalid value for count value of custom queues');
-            }
-            $this->_options[ConnectionOptions::OPTION_CUSTOM_QUEUE_COUNT] = $count;
-        }
-    }
-
-    /**
-     * Disable usage of custom queue for all actions of the connection
-     *
-     * @internal this method is currently experimental. whether or not it will 
-     *           become part of the official API needs decision
-     */
-    public function disableCustomQueue() 
-    {
-        $this->_options[ConnectionOptions::OPTION_CUSTOM_QUEUE] = null;
-        $this->_options[ConnectionOptions::OPTION_CUSTOM_QUEUE_COUNT] = null;
-    }
- 
 
     /**
      * Issue an HTTP GET request
@@ -214,11 +201,11 @@ class Connection
      * @throws Exception
      *
      * @param string $url - GET URL
-     * @param array  $customHeader
+     * @param array  $customHeaders
      *
      * @return HttpResponse
      */
-    public function get($url, array $customHeaders = array())
+    public function get($url, array $customHeaders = [])
     {
         $response = $this->executeRequest(HttpHelper::METHOD_GET, $url, '', $customHeaders);
 
@@ -232,11 +219,11 @@ class Connection
      *
      * @param string $url  - POST URL
      * @param string $data - body to post
-     * @param array  $customHeader
+     * @param array  $customHeaders
      *
      * @return HttpResponse
      */
-    public function post($url, $data, array $customHeaders = array())
+    public function post($url, $data, array $customHeaders = [])
     {
         $response = $this->executeRequest(HttpHelper::METHOD_POST, $url, $data, $customHeaders);
 
@@ -250,11 +237,11 @@ class Connection
      *
      * @param string $url  - PUT URL
      * @param string $data - body to post
-     * @param array  $customHeader
+     * @param array  $customHeaders
      *
      * @return HttpResponse
      */
-    public function put($url, $data, array $customHeaders = array())
+    public function put($url, $data, array $customHeaders = [])
     {
         $response = $this->executeRequest(HttpHelper::METHOD_PUT, $url, $data, $customHeaders);
 
@@ -267,11 +254,11 @@ class Connection
      * @throws Exception
      *
      * @param string $url - PUT URL
-     * @param array  $customHeader
+     * @param array  $customHeaders
      *
      * @return HttpResponse
      */
-    public function head($url, array $customHeaders = array())
+    public function head($url, array $customHeaders = [])
     {
         $response = $this->executeRequest(HttpHelper::METHOD_HEAD, $url, '', $customHeaders);
 
@@ -285,11 +272,11 @@ class Connection
      *
      * @param string $url  - PATCH URL
      * @param string $data - patch body
-     * @param array  $customHeader
+     * @param array  $customHeaders
      *
      * @return HttpResponse
      */
-    public function patch($url, $data, array $customHeaders = array())
+    public function patch($url, $data, array $customHeaders = [])
     {
         $response = $this->executeRequest(HttpHelper::METHOD_PATCH, $url, $data, $customHeaders);
 
@@ -302,11 +289,11 @@ class Connection
      * @throws Exception
      *
      * @param string $url - DELETE URL
-     * @param array  $customHeader
+     * @param array  $customHeaders
      *
      * @return HttpResponse
      */
-    public function delete($url, array $customHeaders = array())
+    public function delete($url, array $customHeaders = [])
     {
         $response = $this->executeRequest(HttpHelper::METHOD_DELETE, $url, '', $customHeaders);
 
@@ -315,12 +302,52 @@ class Connection
 
 
     /**
+     * Recalculate the static HTTP header string used for all HTTP requests in this connection
+     */
+    private function updateHttpHeader()
+    {
+        $this->_httpHeader = HttpHelper::EOL;
+
+        $endpoint = $this->_options[ConnectionOptions::OPTION_ENDPOINT];
+        if (Endpoint::getType($endpoint) !== Endpoint::TYPE_UNIX) {
+            $this->_httpHeader .= sprintf('Host: %s%s', Endpoint::getHost($endpoint), HttpHelper::EOL);
+        }
+
+        if (isset($this->_options[ConnectionOptions::OPTION_AUTH_TYPE], $this->_options[ConnectionOptions::OPTION_AUTH_USER])) {
+            // add authorization header
+            $authorizationValue = base64_encode(
+                $this->_options[ConnectionOptions::OPTION_AUTH_USER] . ':' .
+                $this->_options[ConnectionOptions::OPTION_AUTH_PASSWD]
+            );
+
+            $this->_httpHeader .= sprintf(
+                'Authorization: %s %s%s',
+                $this->_options[ConnectionOptions::OPTION_AUTH_TYPE],
+                $authorizationValue,
+                HttpHelper::EOL
+            );
+        }
+
+        if (isset($this->_options[ConnectionOptions::OPTION_CONNECTION])) {
+            // add connection header
+            $this->_httpHeader .= sprintf('Connection: %s%s', $this->_options[ConnectionOptions::OPTION_CONNECTION], HttpHelper::EOL);
+        }
+
+        if ($this->_database === '') {
+            $this->_baseUrl = '/_db/_system';
+        } else {
+            $this->_baseUrl = '/_db/' . urlencode($this->_database);
+        }
+    }
+
+    /**
      * Get a connection handle
      *
      * If keep-alive connections are used, the handle will be stored and re-used
      *
      * @throws ClientException
      * @return resource - connection handle
+     * @throws \triagens\ArangoDb\ConnectException
      */
     private function getHandle()
     {
@@ -355,41 +382,6 @@ class Connection
     }
 
     /**
-     * Parse the response return the body values as an assoc array
-     *
-     * @throws Exception
-     *
-     * @param HttpResponse $response - the response as supplied by the server
-     *
-     * @return HttpResponse
-     */
-    public function parseResponse(HttpResponse $response)
-    {
-        $httpCode = $response->getHttpCode();
-
-        if ($httpCode < 200 || $httpCode >= 400) {
-            // failure on server
-
-            $body = $response->getBody();
-            if ($body != '') {
-                // check if we can find details in the response body
-                $details = json_decode($body, true);
-                if (is_array($details) && isset($details["errorMessage"])) {
-                    // yes, we got details
-                    $exception = new ServerException($details["errorMessage"], $details["code"]);
-                    $exception->setDetails($details);
-                    throw $exception;
-                }
-            }
-
-            // no details found, throw normal exception
-            throw new ServerException($response->getResult(), $httpCode);
-        }
-
-        return $response;
-    }
-
-    /**
      * Execute an HTTP request and return the results
      *
      * This function will throw if no connection to the server can be established or if
@@ -406,50 +398,31 @@ class Connection
      *
      * @return HttpResponse
      */
-    private function executeRequest($method, $url, $data, array $customHeaders = array())
+    private function executeRequest($method, $url, $data, array $customHeaders = [])
     {
+        assert($this->_httpHeader !== '');
+        $wasAsync = false;
+        if (is_array($customHeaders) && isset($customHeaders[HttpHelper::ASYNC_HEADER])) {
+            $wasAsync = true;
+        }
+
         HttpHelper::validateMethod($method);
-        $database = $this->getDatabase();
-        if ($database === '') {
-            $url = '/_db/' . '_system' . $url;
-        } else {
-            $url = '/_db/' . urlencode($database) . $url;
-        }
-
-        // check if a custom queue should be used
-        if (! isset($customHeaders[ConnectionOptions::OPTION_CUSTOM_QUEUE]) &&
-            $this->_options[ConnectionOptions::OPTION_CUSTOM_QUEUE] !== null) {
-
-            $customHeaders[HttpHelper::QUEUE_HEADER] = $this->_options[ConnectionOptions::OPTION_CUSTOM_QUEUE]; 
-
-            // check if a counter is set for the custom queue
-            $count = $this->_options[ConnectionOptions::OPTION_CUSTOM_QUEUE_COUNT];
-            if ($count !== null) {
-                // yes, now decrease the counter
-
-                if ($count === 1) {
-                    $this->disableCustomQueue();
-                }
-                else {
-                    $this->_options->offsetSet(ConnectionOptions::OPTION_CUSTOM_QUEUE_COUNT, $count - 1);
-                }
-            }
-        }
+        $url = $this->_baseUrl . $url;
 
         // create request data
         if ($this->_batchRequest === false) {
 
             if ($this->_captureBatch === true) {
                 $this->_options->offsetSet(ConnectionOptions::OPTION_BATCHPART, true);
-                $request = HttpHelper::buildRequest($this->_options, $method, $url, $data, $customHeaders);
+                $request = HttpHelper::buildRequest($this->_options, $this->_httpHeader, $method, $url, $data, $customHeaders);
                 $this->_options->offsetSet(ConnectionOptions::OPTION_BATCHPART, false);
             } else {
-                $request = HttpHelper::buildRequest($this->_options, $method, $url, $data, $customHeaders);
+                $request = HttpHelper::buildRequest($this->_options, $this->_httpHeader, $method, $url, $data, $customHeaders);
             }
 
             if ($this->_captureBatch === true) {
                 $batchPart = $this->doBatch($method, $request);
-                if (!is_null($batchPart)) {
+                if (null !== $batchPart) {
                     return $batchPart;
                 }
             }
@@ -457,8 +430,7 @@ class Connection
             $this->_batchRequest = false;
 
             $this->_options->offsetSet(ConnectionOptions::OPTION_BATCH, true);
-
-            $request = HttpHelper::buildRequest($this->_options, $method, $url, $data, $customHeaders);
+            $request = HttpHelper::buildRequest($this->_options, $this->_httpHeader, $method, $url, $data, $customHeaders);
             $this->_options->offsetSet(ConnectionOptions::OPTION_BATCH, false);
         }
 
@@ -504,14 +476,16 @@ class Connection
                 fclose($handle);
             }
 
-            $response = new HttpResponse($result, $url, $method);
+            $response = new HttpResponse($result, $url, $method, $wasAsync);
 
             if ($traceFunc) {
                 // call tracer func
                 if ($this->_options[ConnectionOptions::OPTION_ENHANCED_TRACE]) {
                     $traceFunc(
-                        new TraceResponse($response->getHeaders(), $response->getHttpCode(), $response->getBody(),
-                            $timeTaken)
+                        new TraceResponse(
+                            $response->getHeaders(), $response->getHttpCode(), $response->getBody(),
+                            $timeTaken
+                        )
                     );
                 } else {
                     $traceFunc('receive', $result);
@@ -525,24 +499,38 @@ class Connection
     }
 
     /**
-     * Get the client version (alias for getClientVersion)
+     * Parse the response return the body values as an assoc array
      *
-     * @return string
-     */
-    public static function getVersion()
-    {
-        return self::getClientVersion();
-    }
-
-
-    /**
-     * Get the client version
+     * @throws Exception
      *
-     * @return string
+     * @param HttpResponse $response - the response as supplied by the server
+     *
+     * @return HttpResponse
      */
-    public static function getClientVersion()
+    public function parseResponse(HttpResponse $response)
     {
-        return self::$_apiVersion;
+        $httpCode = $response->getHttpCode();
+
+        if ($httpCode < 200 || $httpCode >= 400) {
+            // failure on server
+
+            $body = $response->getBody();
+            if ($body !== '') {
+                // check if we can find details in the response body
+                $details = json_decode($body, true);
+                if (is_array($details) && isset($details['errorMessage'])) {
+                    // yes, we got details
+                    $exception = new ServerException($details['errorMessage'], $details['code']);
+                    $exception->setDetails($details);
+                    throw $exception;
+                }
+            }
+
+            // no details found, throw normal exception
+            throw new ServerException($response->getResult(), $httpCode);
+        }
+
+        return $response;
     }
 
     /**
@@ -554,19 +542,9 @@ class Connection
     {
         $this->_captureBatch = false;
 
-        return $this->getActiveBatch();
-    }
-
-
-    /**
-     * returns the active batch
-     *
-     * @return Batch active batch
-     */
-    public function getActiveBatch()
-    {
         return $this->_activeBatch;
     }
+
 
     /**
      * Sets the active Batch for this connection
@@ -579,6 +557,16 @@ class Connection
     {
         $this->_activeBatch = $batch;
 
+        return $this->_activeBatch;
+    }
+
+    /**
+     * returns the active batch
+     *
+     * @return Batch active batch
+     */
+    public function getActiveBatch()
+    {
         return $this->_activeBatch;
     }
 
@@ -609,8 +597,6 @@ class Connection
      * Returns true if this connection is in Batch-Capture mode
      *
      * @return bool
-     *
-     * returns the active batch
      */
     public function isInBatchCaptureMode()
     {
@@ -620,7 +606,6 @@ class Connection
 
     /**
      * returns the active batch
-     *
      */
     public function getBatches()
     {
@@ -637,9 +622,10 @@ class Connection
      *
      * This checks if we're in batch mode and returns a placeholder object,
      * since we need to return some object that is expected by the caller.
-     * if we're not in batch mode it doesn't return anything, and
+     * if we're not in batch mode it does not return anything, and
      *
      * @return mixed Batchpart or null if not in batch capturing mode
+     * @throws \triagens\ArangoDb\ClientException
      */
     private function doBatch($method, $request)
     {
@@ -656,7 +642,6 @@ class Connection
         return $batchPart;
     }
 
-
     /**
      * This function checks that the encoding of a string is utf.
      * It only checks for printable characters.
@@ -668,7 +653,7 @@ class Connection
      */
     public static function detect_utf($string)
     {
-        if (preg_match("//u", $string)) {
+        if (preg_match('//u', $string)) {
             return true;
         } else {
             return false;
@@ -687,24 +672,28 @@ class Connection
      */
     public static function check_encoding($data)
     {
+        if (!is_array($data)) {
+            return;
+        }
+
         foreach ($data as $key => $value) {
             if (!is_array($value)) {
                 // check if the multibyte library function is installed and use it.
                 if (function_exists('mb_detect_encoding')) {
                     // check with mb library
-                    if (mb_detect_encoding($key, 'UTF-8', true) === false) {
-                        throw new ClientException("Only UTF-8 encoded keys allowed. Wrong encoding in key string: " . $key);
+                    if (is_string($key) && mb_detect_encoding($key, 'UTF-8', true) === false) {
+                        throw new ClientException('Only UTF-8 encoded keys allowed. Wrong encoding in key string: ' . $key);
                     }
-                    if (mb_detect_encoding($value, 'UTF-8', true) === false) {
-                        throw new ClientException("Only UTF-8 encoded values allowed. Wrong encoding in value string: " . $value);
+                    if (is_string($value) && mb_detect_encoding($value, 'UTF-8', true) === false) {
+                        throw new ClientException('Only UTF-8 encoded values allowed. Wrong encoding in value string: ' . $value);
                     }
                 } else {
                     // fallback to preg_match checking
-                    if (self::detect_utf($key) == false) {
-                        throw new ClientException("Only UTF-8 encoded keys allowed. Wrong encoding in key string: " . $key);
+                    if (is_string($key) && self::detect_utf($key) === false) {
+                        throw new ClientException('Only UTF-8 encoded keys allowed. Wrong encoding in key string: ' . $key);
                     }
-                    if (self::detect_utf($value) == false) {
-                        throw new ClientException("Only UTF-8 encoded values allowed. Wrong encoding in value string: " . $value);
+                    if (is_string($value) && self::detect_utf($value) === false) {
+                        throw new ClientException('Only UTF-8 encoded values allowed. Wrong encoding in value string: ' . $value);
                     }
                 }
             } else {
@@ -723,6 +712,7 @@ class Connection
      * @param mixed $options the options for the json_encode() call
      *
      * @return string the result of the json_encode
+     * @throws \triagens\ArangoDb\ClientException
      */
     public function json_encode_wrapper($data, $options = null)
     {
@@ -750,7 +740,9 @@ class Connection
     public function setDatabase($database)
     {
         $this->_options[ConnectionOptions::OPTION_DATABASE] = $database;
-        $this->_database = $database;
+        $this->_database                                    = $database;
+
+        $this->updateHttpHeader();
     }
 
     /**

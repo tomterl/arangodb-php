@@ -13,8 +13,6 @@ namespace triagens\ArangoDb;
 /**
  * Class TraceRequest
  *
- * <br />
- *
  * @author    Francis Chuang
  * @package   triagens\ArangoDb
  * @since     1.3
@@ -26,7 +24,7 @@ class TraceRequest
      *
      * @var array
      */
-    private $_headers = array();
+    private $_headers = [];
 
     /**
      * Stores the http method
@@ -54,7 +52,7 @@ class TraceRequest
      *
      * @var string
      */
-    private $_type = "request";
+    private $_type = 'request';
 
     /**
      * Set up the request trace

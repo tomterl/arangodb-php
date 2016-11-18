@@ -13,8 +13,6 @@ namespace triagens\ArangoDb;
 /**
  * Document update policies
  *
- * <br />
- *
  * @package triagens\ArangoDb
  * @since   0.2
  */
@@ -43,7 +41,7 @@ class UpdatePolicy
     {
         assert(is_string($value));
 
-        if (!in_array($value, array(self::LAST, self::ERROR))) {
+        if ($value !== self::LAST && $value !== self::ERROR) {
             throw new ClientException('Invalid update policy');
         }
     }

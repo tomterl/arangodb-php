@@ -5,6 +5,7 @@
  *
  * @package   triagens\ArangoDb
  * @author    Jan Steemann
+ * @author    Frank Mayer
  * @copyright Copyright 2012, triagens GmbH, Cologne, Germany
  */
 
@@ -25,28 +26,28 @@ class Document
      *
      * @var string - document id
      */
-    protected $_id = null;
+    protected $_id;
 
     /**
      * The document key (might be NULL for new documents)
      *
      * @var string - document id
      */
-    protected $_key = null;
+    protected $_key;
 
     /**
      * The document revision (might be NULL for new documents)
      *
      * @var mixed
      */
-    protected $_rev = null;
+    protected $_rev;
 
     /**
      * The document attributes (names/values)
      *
      * @var array
      */
-    protected $_values = array();
+    protected $_values = [];
 
     /**
      * Flag to indicate whether document was changed locally
@@ -75,7 +76,14 @@ class Document
      *
      * @var bool
      */
-    protected $_hidden = array();
+    protected $_hiddenAttributes = [];
+
+    /**
+     * Flag to indicate whether document was changed locally
+     *
+     * @var bool
+     */
+    protected $_ignoreHiddenAttributes = false;
 
     /**
      * Document id index
@@ -100,7 +108,12 @@ class Document
     /**
      * hidden attribute index
      */
-    const ENTRY_HIDDEN = '_hidden';
+    const ENTRY_HIDDENATTRIBUTES = '_hiddenAttributes';
+
+    /**
+     * hidden attribute index
+     */
+    const ENTRY_IGNOREHIDDENATTRIBUTES = '_ignoreHiddenAttributes';
 
     /**
      * waitForSync option index
@@ -120,9 +133,12 @@ class Document
     /**
      * Constructs an empty document
      *
-     * @param array $options - optional, initial $options for document
+     * @param array $options           - optional, initial $options for document
+     *                                 <p>Options are :<br>
+     *                                 <li>'_hiddenAttributes' - Set an array of hidden attributes for created documents.
+     *                                 <li>'_ignoreHiddenAttributes' - true to show hidden attributes. Defaults to false</li>
+     *                                 <p>
      *
-     * @return Document
      */
     public function __construct(array $options = null)
     {
@@ -131,8 +147,11 @@ class Document
             if (isset($options['hiddenAttributes'])) {
                 $this->setHiddenAttributes($options['hiddenAttributes']);
             }
-            if (isset($options['_hiddenAttributes'])) {
-                $this->setHiddenAttributes($options['_hiddenAttributes']);
+            if (isset($options[self::ENTRY_HIDDENATTRIBUTES])) {
+                $this->setHiddenAttributes($options[self::ENTRY_HIDDENATTRIBUTES]);
+            }
+            if (isset($options[self::ENTRY_IGNOREHIDDENATTRIBUTES])) {
+                $this->setIgnoreHiddenAttributes($options[self::ENTRY_IGNOREHIDDENATTRIBUTES]);
             }
             if (isset($options[self::ENTRY_ISNEW])) {
                 $this->setIsNew($options[self::ENTRY_ISNEW]);
@@ -151,9 +170,9 @@ class Document
      * @param array $values  - initial values for document
      * @param array $options - optional, initial options for document
      *
-     * @return Document|Edge
+     * @return Document|Edge|Graph
      */
-    public static function createFromArray(array $values, array $options = array())
+    public static function createFromArray($values, array $options = [])
     {
         $document = new static($options);
         foreach ($values as $key => $value) {
@@ -161,7 +180,7 @@ class Document
         }
 
         $document->setChanged(true);
-                
+
         return $document;
     }
 
@@ -169,6 +188,8 @@ class Document
      * Clone a document
      *
      * Returns the clone
+     *
+     * @magic
      *
      * @return void
      */
@@ -186,6 +207,8 @@ class Document
      * It will not output hidden attributes.
      *
      * Returns the document as JSON-encoded string
+     *
+     * @magic
      *
      * @return string - JSON-encoded document
      */
@@ -205,7 +228,7 @@ class Document
      *
      * @return string - JSON-encoded document
      */
-    public function toJson($options = array())
+    public function toJson(array $options = [])
     {
         return json_encode($this->getAll($options));
     }
@@ -221,7 +244,7 @@ class Document
      *
      * @return string - PHP serialized document
      */
-    public function toSerialized($options = array())
+    public function toSerialized(array $options = [])
     {
         return serialize($this->getAll($options));
     }
@@ -231,13 +254,15 @@ class Document
      *
      * @param array $attributes - attributes array
      *
+     * @param array $_hiddenAttributes
+     *
      * @return array - attributes array
      */
-    public function filterHiddenAttributes($attributes)
+    public function filterHiddenAttributes($attributes, array $_hiddenAttributes = [])
     {
-        $hiddenAttributes = $this->getHiddenAttributes();
+        $hiddenAttributes = $_hiddenAttributes !== null ? $_hiddenAttributes : $this->getHiddenAttributes();
 
-        if (is_array($hiddenAttributes)) {
+        if (count($hiddenAttributes) > 0) {
             foreach ($hiddenAttributes as $hiddenAttributeName) {
                 if (isset($attributes[$hiddenAttributeName])) {
                     unset($attributes[$hiddenAttributeName]);
@@ -245,7 +270,7 @@ class Document
             }
         }
 
-        unset ($attributes['_hidden']);
+        unset ($attributes[self::ENTRY_HIDDENATTRIBUTES]);
 
         return $attributes;
     }
@@ -274,27 +299,31 @@ class Document
         if ($key[0] === '_') {
             if ($key === self::ENTRY_ID) {
                 $this->setInternalId($value);
+
                 return;
             }
 
             if ($key === self::ENTRY_KEY) {
                 $this->setInternalKey($value);
+
                 return;
             }
 
             if ($key === self::ENTRY_REV) {
                 $this->setRevision($value);
+
                 return;
             }
-        
+
             if ($key === self::ENTRY_ISNEW) {
                 $this->setIsNew($value);
+
                 return;
             }
         }
 
-        if (! $this->_changed) {
-            if (! isset($this->_values[$key]) || $this->_values[$key] !== $value) {
+        if (!$this->_changed) {
+            if (!isset($this->_values[$key]) || $this->_values[$key] !== $value) {
                 // set changed flag
                 $this->_changed = true;
             }
@@ -312,6 +341,8 @@ class Document
      * This function is mapped to set() internally.
      *
      * @throws ClientException
+     *
+     * @magic
      *
      * @param string $key   - attribute name
      * @param mixed  $value - value for attribute
@@ -344,6 +375,8 @@ class Document
      *
      * This function is mapped to get() internally.
      *
+     * @magic
+     *
      * @param string $key - name of attribute
      *
      * @return mixed - value of attribute, NULL if attribute is not set
@@ -351,6 +384,37 @@ class Document
     public function __get($key)
     {
         return $this->get($key);
+    }
+
+
+    /**
+     * Is triggered by calling isset() or empty() on inaccessible properties.
+     *
+     * @param string $key - name of attribute
+     *
+     * @return boolean returns true or false (set or not set)
+     */
+    public function __isset($key)
+    {
+        if (isset($this->_values[$key])) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Magic method to unset an attribute.
+     * Caution!!! This works only on the first array level.
+     * The preferred method to unset attributes in the database, is to set those to null and do an update() with the option: 'keepNull' => false.
+     *
+     * @magic
+     *
+     * @param $key
+     */
+    public function __unset($key)
+    {
+        unset($this->_values[$key]);
     }
 
     /**
@@ -364,11 +428,12 @@ class Document
      *
      * @return array - array of all document attributes/values
      */
-    public function getAll($options = array())
+    public function getAll(array $options = [])
     {
         // This preserves compatibility for the old includeInternals parameter.
         $includeInternals       = false;
-        $ignoreHiddenAttributes = false;
+        $ignoreHiddenAttributes = $this->{self::ENTRY_IGNOREHIDDENATTRIBUTES};
+        $_hiddenAttributes      = $this->{self::ENTRY_HIDDENATTRIBUTES};
 
         if (!is_array($options)) {
             $includeInternals = $options;
@@ -391,27 +456,32 @@ class Document
             ) ? $options['ignoreHiddenAttributes'] : $ignoreHiddenAttributes;
 
             $ignoreHiddenAttributes = array_key_exists(
-                '_ignoreHiddenAttributes',
+                self::ENTRY_IGNOREHIDDENATTRIBUTES,
                 $options
-            ) ? $options['_ignoreHiddenAttributes'] : $ignoreHiddenAttributes;
+            ) ? $options[self::ENTRY_IGNOREHIDDENATTRIBUTES] : $ignoreHiddenAttributes;
+
+            $_hiddenAttributes = array_key_exists(
+                self::ENTRY_HIDDENATTRIBUTES,
+                $options
+            ) ? $options[self::ENTRY_HIDDENATTRIBUTES] : $_hiddenAttributes;
         }
 
         $data         = $this->_values;
-        $nonInternals = array('_changed', '_values', '_hidden');
+        $nonInternals = ['_changed', '_values', self::ENTRY_HIDDENATTRIBUTES];
 
-        if ($includeInternals == true) {
+        if ($includeInternals === true) {
             foreach ($this as $key => $value) {
-                if (substr($key, 0, 1) == '_' && substr($key, 0, 2) !== '__' && !in_array($key, $nonInternals)) {
+                if ($key[0] === '_' && 0 !== strpos($key, '__') && !in_array($key, $nonInternals, true)) {
                     $data[$key] = $value;
                 }
             }
         }
 
-        if ($ignoreHiddenAttributes == false) {
-            $data = $this->filterHiddenAttributes($data);
+        if ($ignoreHiddenAttributes === false) {
+            $data = $this->filterHiddenAttributes($data, $_hiddenAttributes);
         }
 
-        if (!is_null($this->_key)) {
+        if (null !== $this->_key) {
             $data['_key'] = $this->_key;
         }
 
@@ -419,7 +489,55 @@ class Document
     }
 
     /**
+     * Get all document attributes for insertion/update
+     *
+     * @return mixed - associative array of all document attributes/values
+     */
+    public function getAllForInsertUpdate()
+    {
+        $data = [];
+        foreach ($this->_values as $key => $value) {
+            if ($key === '_id' || $key === '_rev') {
+                continue;
+            } else if ($key === '_key' && $value === null) {
+                // key value not yet set
+                continue;
+            }
+            $data[$key] = $value;
+        }
+        if ($this->_key !== null) {
+            $data['_key'] = $this->_key;
+        }
+
+        return $data;
+    }
+
+
+    /**
+     * Get all document attributes, and return an empty object if the documentapped into a DocumentWrapper class
+     *
+     * @param mixed $options - optional, array of options for the getAll function, or the boolean value for $includeInternals
+     *                       <p>Options are :
+     *                       <li>'_includeInternals' - true to include the internal attributes. Defaults to false</li>
+     *                       <li>'_ignoreHiddenAttributes' - true to show hidden attributes. Defaults to false</li>
+     *                       </p>
+     *
+     * @return mixed - associative array of all document attributes/values, or an empty StdClass if the document
+     *                 does not have any
+     */
+    public function getAllAsObject(array $options = [])
+    {
+        $result = $this->getAll($options);
+        if (count($result) === 0) {
+            return new \stdClass();
+        }
+
+        return $result;
+    }
+
+    /**
      * Set the hidden attributes
+     * $cursor
      *
      * @param array $attributes - array of attributes
      *
@@ -427,7 +545,7 @@ class Document
      */
     public function setHiddenAttributes(array $attributes)
     {
-        $this->_hidden = $attributes;
+        $this->{self::ENTRY_HIDDENATTRIBUTES} = $attributes;
     }
 
     /**
@@ -437,7 +555,23 @@ class Document
      */
     public function getHiddenAttributes()
     {
-        return $this->_hidden;
+        return $this->{self::ENTRY_HIDDENATTRIBUTES};
+    }
+
+    /**
+     * @return boolean
+     */
+    public function isIgnoreHiddenAttributes()
+    {
+        return $this->{self::ENTRY_IGNOREHIDDENATTRIBUTES};
+    }
+
+    /**
+     * @param boolean $ignoreHiddenAttributes
+     */
+    public function setIgnoreHiddenAttributes($ignoreHiddenAttributes)
+    {
+        $this->{self::ENTRY_IGNOREHIDDENATTRIBUTES} = (bool) $ignoreHiddenAttributes;
     }
 
     /**
@@ -497,12 +631,12 @@ class Document
      */
     public function setInternalId($id)
     {
-        if ($this->_id !== null && $this->_id != $id) {
+        if ($this->_id !== null && $this->_id !== $id) {
             throw new ClientException('Should not update the id of an existing document');
         }
 
 
-        if (!preg_match('/^[a-zA-Z0-9_-]{1,64}\/[a-zA-Z0-9_:\.@-]{1,254}$/', $id)) {
+        if (!preg_match('/^[a-zA-Z0-9_-]{1,64}\/[a-zA-Z0-9_:\.@\-()+,=;$!*\'%]{1,254}$/', $id)) {
             throw new ClientException('Invalid format for document id');
         }
 
@@ -522,11 +656,11 @@ class Document
      */
     public function setInternalKey($key)
     {
-        if ($this->_key !== null && $this->_key != $key) {
+        if ($this->_key !== null && $this->_key !== $key) {
             throw new ClientException('Should not update the key of an existing document');
         }
 
-        if (!preg_match('/^[a-zA-Z0-9_:\.@-]{1,254}$/', $key)) {
+        if (!preg_match('/^[a-zA-Z0-9_:\.@\-()+,=;$!*\'%]{1,254}$/', $key)) {
             throw new ClientException('Invalid format for document key');
         }
 
@@ -616,8 +750,8 @@ class Document
      *
      * Revision ids are generated on the server only.
      *
-     * Document ids are numeric but might be bigger than PHP_INT_MAX.
-     * To reliably store a document id elsewhere, a PHP string should be used
+     * Document ids are strings, even if they look "numeric"
+     * To reliably store a document id elsewhere, a PHP string must be used
      *
      * @param mixed $rev - revision id
      *

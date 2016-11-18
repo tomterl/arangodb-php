@@ -13,8 +13,6 @@ namespace triagens\ArangoDb;
 /**
  * A simple validator for values to be stored in the database
  *
- * <br />
- *
  * @package triagens\ArangoDb
  * @since   0.2
  */
@@ -33,7 +31,7 @@ class ValueValidator
      */
     public static function validate($value)
     {
-        if (is_string($value) || is_int($value) || is_double($value) || is_bool($value) || is_null($value)) {
+        if (is_string($value) || is_int($value) || is_float($value) || is_bool($value) || null === $value) {
             // type is allowed
             return;
         }

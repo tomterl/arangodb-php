@@ -15,8 +15,7 @@ namespace triagens\ArangoDb;
 /**
  * Provides access to ArangoDB's administration interface
  *
- * The admin handler utilizes ArangoDB's Admin API.<br>
- * <br>
+ * The admin handler utilizes ArangoDB's Admin API.
  *
  * @package   triagens\ArangoDb
  * @since     1.2
@@ -28,7 +27,7 @@ class AdminHandler extends
     /**
      * details for server version
      */
-    const OPTION_DETAILS = "details";
+    const OPTION_DETAILS = 'details';
 
     /**
      * Get the server version
@@ -47,7 +46,7 @@ class AdminHandler extends
         $url = Urls::URL_ADMIN_VERSION;
 
         if ($details) {
-            $url = UrlHelper::appendParamsUrl($url, array('details' => true));
+            $url = UrlHelper::appendParamsUrl($url, ['details' => true]);
         }
 
         $response = $this->getConnection()->get($url);
@@ -59,7 +58,7 @@ class AdminHandler extends
             return $data['version'];
         }
     }
-    
+
     /**
      * Get the server role
      *
@@ -72,7 +71,7 @@ class AdminHandler extends
      */
     public function getServerRole()
     {
-        $url = Urls::URL_ADMIN_SERVER_ROLE;
+        $url      = Urls::URL_ADMIN_SERVER_ROLE;
         $response = $this->getConnection()->get($url);
         $data     = $response->getJson();
 
@@ -128,31 +127,12 @@ class AdminHandler extends
      * @return array - an array holding the various attributes of a log: lid, level, timestamp, text and the total amount of log entries before pagination.
      * @since 1.2
      */
-    public function getServerLog($options = array())
+    public function getServerLog(array $options = [])
     {
         $url      = UrlHelper::appendParamsUrl(Urls::URL_ADMIN_LOG, $options);
         $response = $this->getConnection()->get($url);
-        $data     = $response->getJson();
 
-        return $data;
-    }
-
-
-    /**
-     * Flush the server's modules cache
-     * The call triggers a flush of the modules cache on the server. See Modules Cache for details about this cache.
-     *
-     * This method does not exist on the server side since ArangoDB 2.3.0
-     *
-     * @throws Exception
-     *
-     * @return bool
-     * @since 1.2
-     * @deprecated
-     */
-    public function flushServerModuleCache()
-    {
-        return true;
+        return $response->getJson();
     }
 
 
@@ -164,12 +144,12 @@ class AdminHandler extends
      *
      * @throws Exception
      *
-     * @return array
+     * @return bool
      * @since 1.2
      */
     public function reloadServerRouting()
     {
-        $this->getConnection()->POST(Urls::URL_ADMIN_ROUTING_RELOAD, '');
+        $this->getConnection()->post(Urls::URL_ADMIN_ROUTING_RELOAD, '');
 
         return true;
     }
@@ -185,7 +165,7 @@ class AdminHandler extends
      * and the distribution list in counts.
      * For more information on the statistics returned, please lookup the statistics interface description at
      *
-     * @link  http://www.arangodb.com/manuals/1.3.devel/HttpSystem.html#HttpSystemAdminStatistics
+     * @link  https://docs.arangodb.com/HTTP/AdministrationAndMonitoring/index.html
      *
      * This will throw if the statistics cannot be retrieved
      *
@@ -199,11 +179,10 @@ class AdminHandler extends
      */
     public function getServerStatistics()
     {
-        $url      = UrlHelper::appendParamsUrl(Urls::URL_ADMIN_STATISTICS, array());
+        $url      = UrlHelper::appendParamsUrl(Urls::URL_ADMIN_STATISTICS, []);
         $response = $this->getConnection()->get($url);
-        $data     = $response->getJson();
 
-        return $data;
+        return $response->getJson();
     }
 
 
@@ -213,7 +192,7 @@ class AdminHandler extends
      * and a list of statistics figures in the attribute figures.
      * For more information on the statistics returned, please lookup the statistics interface description at
      *
-     * @link  http://www.arangodb.com/manuals/1.3.devel/HttpSystem.html#HttpSystemAdminStatistics
+     * @link  https://docs.arangodb.com/HTTP/AdministrationAndMonitoring/index.html
      *
      * This will throw if the statistics-description cannot be retrieved
      *
@@ -232,12 +211,11 @@ class AdminHandler extends
      *
      * @since 1.3
      */
-    public function getServerStatisticsDescription($options = array())
+    public function getServerStatisticsDescription(array $options = [])
     {
         $url      = UrlHelper::appendParamsUrl(Urls::URL_ADMIN_STATISTICS_DESCRIPTION, $options);
         $response = $this->getConnection()->get($url);
-        $data     = $response->getJson();
 
-        return $data;
+        return $response->getJson();
     }
 }

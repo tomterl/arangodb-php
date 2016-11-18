@@ -13,7 +13,7 @@ namespace triagens\ArangoDb;
 /**
  * Container for an AQL query
  *
- * Optional bind parameters can be used when issuing thei AQL query to separate
+ * Optional bind parameters can be used when issuing the AQL query to separate
  * the query from the values.
  * Executing a query will result in a cursor being created.
  *
@@ -41,8 +41,6 @@ namespace triagens\ArangoDb;
  *   to treat the statement result as an array of documents, but as a flat array
  * </ul>
  *
- * <br />
- *
  * @package triagens\ArangoDb
  * @since   0.2
  */
@@ -53,7 +51,7 @@ class Statement
      *
      * @var Connection
      */
-    private $_connection = null;
+    private $_connection;
 
     /**
      * The bind variables and values used for the statement
@@ -67,7 +65,7 @@ class Statement
      *
      * @var mixed
      */
-    private $_batchSize = null;
+    private $_batchSize;
 
     /**
      * The count flag (should server return total number of results)
@@ -89,7 +87,7 @@ class Statement
      *
      * @var string
      */
-    private $_query = null;
+    private $_query;
 
     /**
      * "flat" flag (if set, the query results will be treated as a simple array, not documents)
@@ -106,19 +104,26 @@ class Statement
     private $_sanitize = false;
 
     /**
-     * Custom queue name
+     * Number of retries in case a deadlock occurs
      *
-     * @var string 
+     * @var bool
      */
-    private $_customQueue = null;
-    
+    private $_retries = 0;
+
+    /**
+     * Whether or not the query cache should be consulted
+     *
+     * @var bool
+     */
+    private $_cache;
+
     /**
      * resultType
      *
      * @var string
      */
     private $resultType;
-    
+
 
     /**
      * Query string index
@@ -134,6 +139,11 @@ class Statement
      * Batch size index
      */
     const ENTRY_BATCHSIZE = 'batchSize';
+
+    /**
+     * Retries index
+     */
+    const ENTRY_RETRIES = 'retries';
 
     /**
      * Bind variables index
@@ -194,11 +204,16 @@ class Statement
             $this->_sanitize = (bool) $data[Cursor::ENTRY_SANITIZE];
         }
 
+        if (isset($data[self::ENTRY_RETRIES])) {
+            $this->_retries = (int) $data[self::ENTRY_RETRIES];
+        }
+
         if (isset($data[Cursor::ENTRY_FLAT])) {
             $this->_flat = (bool) $data[Cursor::ENTRY_FLAT];
         }
-        if (isset($data[Cursor::ENTRY_CUSTOM_QUEUE])) {
-            $this->_customQueue = $data[Cursor::ENTRY_CUSTOM_QUEUE];
+
+        if (isset($data[Cursor::ENTRY_CACHE])) {
+            $this->_cache = (bool) $data[Cursor::ENTRY_CACHE];
         }
     }
 
@@ -227,10 +242,25 @@ class Statement
             throw new ClientException('Query should be a string');
         }
 
-        $data     = $this->buildData();
-        $response = $this->_connection->post(Urls::URL_CURSOR, $this->getConnection()->json_encode_wrapper($data), $this->buildHeaders());
-        
-        return new Cursor($this->_connection, $response->getJson(), $this->getCursorOptions());
+        $data = $this->buildData();
+
+        $tries = 0;
+        while (true) {
+            try {
+                $response = $this->_connection->post(Urls::URL_CURSOR, $this->getConnection()->json_encode_wrapper($data), []);
+
+                return new Cursor($this->_connection, $response->getJson(), $this->getCursorOptions());
+            } catch (ServerException $e) {
+                if ($tries++ >= $this->_retries) {
+                    throw $e;
+                }
+                if ($e->getServerCode() !== 29) {
+                    // 29 is "deadlock detected"
+                    throw $e;
+                }
+                // try again
+            }
+        }
     }
 
 
@@ -240,12 +270,12 @@ class Statement
      * This will post the query to the server and return the execution plan as an array.
      *
      * @throws Exception
-     * @return Array
+     * @return array
      */
     public function explain()
     {
         $data     = $this->buildData();
-        $response = $this->_connection->post(Urls::URL_EXPLAIN, $this->getConnection()->json_encode_wrapper($data), $this->buildHeaders());
+        $response = $this->_connection->post(Urls::URL_EXPLAIN, $this->getConnection()->json_encode_wrapper($data), []);
 
         return $response->getJson();
     }
@@ -257,12 +287,12 @@ class Statement
      * This will post the query to the server for validation and return the validation result as an array.
      *
      * @throws Exception
-     * @return Array
+     * @return array
      */
     public function validate()
     {
         $data     = $this->buildData();
-        $response = $this->_connection->post(Urls::URL_QUERY, $this->getConnection()->json_encode_wrapper($data), $this->buildHeaders());
+        $response = $this->_connection->post(Urls::URL_QUERY, $this->getConnection()->json_encode_wrapper($data), []);
 
         return $response->getJson();
     }
@@ -354,15 +384,17 @@ class Statement
     {
         return $this->_query;
     }
-    
+
     /**
      * setResultType
+     *
+     * @param $resultType
      *
      * @return string - resultType of the query
      */
     public function setResultType($resultType)
     {
-    	return $this->resultType = $resultType;
+        return $this->resultType = $resultType;
     }
 
     /**
@@ -410,6 +442,28 @@ class Statement
     }
 
     /**
+     * Set the caching option for the statement
+     *
+     * @param bool $value - value for 'cache' option
+     *
+     * @return void
+     */
+    public function setCache($value)
+    {
+        $this->_cache = (bool) $value;
+    }
+
+    /**
+     * Get the caching option value of the statement
+     *
+     * @return bool - current value of 'cache' option
+     */
+    public function getCache()
+    {
+        return $this->_cache;
+    }
+
+    /**
      * Set the batch size for the statement
      *
      * The batch size is the number of results to be transferred
@@ -446,33 +500,23 @@ class Statement
 
 
     /**
-     * Build headers for the statement requests
-     *
-     * @return array - headers used when executing the statement
-     */
-    private function buildHeaders()  
-    {
-        if ($this->_customQueue === null || $this->_customQueue === '') {
-            return array();
-        }
-
-        return array(HttpHelper::QUEUE_HEADER => $this->_customQueue);
-    }
-
-    /**
      * Build an array of data to be posted to the server when issuing the statement
      *
      * @return array - array of data to be sent to server
      */
     private function buildData()
     {
-        $data = array(
+        $data = [
             self::ENTRY_QUERY => $this->_query,
             self::ENTRY_COUNT => $this->_doCount,
-            'options'         => array(
+            'options'         => [
                 self::FULL_COUNT => $this->_fullCount
-            )
-        );
+            ]
+        ];
+
+        if ($this->_cache !== null) {
+            $data[Cursor::ENTRY_CACHE] = $this->_cache;
+        }
 
         if ($this->_bindVars->getCount() > 0) {
             $data[self::ENTRY_BINDVARS] = $this->_bindVars->getAll();
@@ -481,6 +525,7 @@ class Statement
         if ($this->_batchSize > 0) {
             $data[self::ENTRY_BATCHSIZE] = $this->_batchSize;
         }
+
         return $data;
     }
 
@@ -491,17 +536,15 @@ class Statement
      */
     private function getCursorOptions()
     {
-        $result = array(
+        $result = [
             Cursor::ENTRY_SANITIZE => (bool) $this->_sanitize,
             Cursor::ENTRY_FLAT     => (bool) $this->_flat,
             Cursor::ENTRY_BASEURL  => Urls::URL_CURSOR
-        );
-        if (isset($this->resultType)) {
-            $result[Cursor::ENTRY_TYPE]  = $this->resultType; 
+        ];
+        if (null !== $this->resultType) {
+            $result[Cursor::ENTRY_TYPE] = $this->resultType;
         }
-        if ($this->_customQueue !== null && $this->_customQueue !== '') {
-            $result[Cursor::ENTRY_CUSTOM_QUEUE] = $this->_customQueue;
-        }
+
         return $result;
     }
 }

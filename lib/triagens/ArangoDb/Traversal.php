@@ -18,7 +18,7 @@ namespace triagens\ArangoDb;
  * The object requires the connection object, the startVertex, the edgeCollection and the optional parameters.<br>
  * <br>
  *
- * @link      http://www.arangodb.com/manuals/1.4/HttpTraversals.html
+ * @link      https://docs.arangodb.com/HTTP/Traversal/index.html
  *
  * @package   triagens\ArangoDb
  * @since     1.4
@@ -30,14 +30,14 @@ class Traversal
      *
      * @var Connection
      */
-    private $_connection = null;
+    private $_connection;
 
     /**
      * The traversal's attributes.
      *
      * @var array
      */
-    protected $attributes = array();
+    protected $attributes = [];
 
     /**
      * count fields
@@ -54,6 +54,10 @@ class Traversal
      */
     const ENTRY_EDGECOLLECTION = 'edgeCollection';
 
+    /**
+     * @var $_action string The action property of the traversal.
+     */
+    protected $_action;
 
     /**
      * Initialise the Traversal object
@@ -63,7 +67,7 @@ class Traversal
      * @param string     $edgeCollection - user function initialization data
      * @param array      $options
      *
-     * @return \triagens\ArangoDb\Traversal
+     * @throws \triagens\ArangoDb\ClientException
      */
     public function __construct(Connection $connection, $startVertex, $edgeCollection, array $options = null)
     {
@@ -81,6 +85,8 @@ class Traversal
      * Execute and get the traversal result
      *
      * @return array $responseArray
+     * @throws \triagens\ArangoDb\Exception
+     * @throws \triagens\ArangoDb\ClientException
      */
     public function getResult()
 
@@ -88,13 +94,12 @@ class Traversal
         $bodyParams = $this->attributes;
 
 
-        $response      = $this->_connection->post(
-                                           Urls::URL_TRAVERSAL,
-                                           $this->getConnection()->json_encode_wrapper($bodyParams)
+        $response = $this->_connection->post(
+            Urls::URL_TRAVERSAL,
+            $this->getConnection()->json_encode_wrapper($bodyParams)
         );
-        $responseArray = $response->getJson();
 
-        return $responseArray;
+        return $response->getJson();
     }
 
 
@@ -120,6 +125,8 @@ class Traversal
      *
      *
      * @param string $value
+     *
+     * @throws \triagens\ArangoDb\ClientException
      */
     public function setStartVertex($value)
     {
@@ -141,6 +148,8 @@ class Traversal
      * Set user function code
      *
      * @param string $value
+     *
+     * @throws \triagens\ArangoDb\ClientException
      */
     public function setEdgeCollection($value)
     {
@@ -188,6 +197,8 @@ class Traversal
      * @param string $key   - attribute name
      * @param mixed  $value - value for attribute
      *
+     * @magic
+     *
      * @return void
      */
     public function __set($key, $value)
@@ -208,6 +219,8 @@ class Traversal
     /**
      * Get an attribute
      *
+     * @magic
+     *
      * @param string $key - name of attribute
      *
      * @return mixed - value of attribute, NULL if attribute is not set
@@ -226,6 +239,8 @@ class Traversal
      *
      * This function is mapped to get() internally.
      *
+     * @magic
+     *
      * @param string $key - name of attribute
      *
      * @return mixed - value of attribute, NULL if attribute is not set
@@ -237,7 +252,26 @@ class Traversal
 
 
     /**
+     * Is triggered by calling isset() or empty() on inaccessible properties.
+     *
+     * @param string $key - name of attribute
+     *
+     * @return boolean returns true or false (set or not set)
+     */
+    public function __isset($key)
+    {
+        if (isset($this->attributes[$key])) {
+            return true;
+        }
+
+        return false;
+    }
+
+
+    /**
      * Returns the action string
+     *
+     * @magic
      *
      * @return string - the current action string
      */

@@ -13,8 +13,10 @@ namespace triagens\ArangoDb;
 /**
  * Value object representing a single User document
  *
- * <br />
- *
+ * @property string     user
+ * @property mixed|null passwd
+ * @property mixed|null active
+ * @property array|null extra
  * @package   triagens\ArangoDb
  * @since     1.2
  */

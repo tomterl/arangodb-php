@@ -84,7 +84,7 @@ class Endpoint
      * @param string $value - endpoint specification
      *
      * @throws ClientException
-     * @return \triagens\ArangoDb\Endpoint
+     *
      */
     public function __construct($value)
     {
@@ -97,6 +97,8 @@ class Endpoint
 
     /**
      * Return a string representation of the endpoint
+     *
+     * @magic
      *
      * @return string - string representation of the endpoint
      */
@@ -163,31 +165,8 @@ class Endpoint
         }
 
         $type = self::getType($value);
-        if ($type === null) {
-            return false;
-        }
 
-        return true;
-    }
-
-
-    /**
-     * creates an endpoint
-     *
-     * This creates a new endpoint<br>
-     * This is an alias function to Endpoint::modify, as ArangoDB's API has one call to support both new and modify
-     *
-     * @param Connection $connection - the connection to be used
-     * @param string     $endpoint   - the endpoint specification, e.g. tcp://127.0.0.1:8530
-     * @param array      $databases  - a list of database names the endpoint is responsible for.
-     *                               *
-     *
-     * @link http://www.arangodb.com/manuals/1.4/HttpEndpoint.html
-     * @return array $responseArray - The response array.
-     */
-    public static function create(Connection $connection, $endpoint, array $databases)
-    {
-        return self::modify($connection, $endpoint, $databases);
+        return !($type === null);
     }
 
 
@@ -198,15 +177,14 @@ class Endpoint
      *
      * @param Connection $connection - the connection to be used
      *
-     * @link                         http://www.arangodb.com/manuals/1.4/HttpEndpoint.html
+     * @link                         https://docs.arangodb.com/HTTP/Endpoints/index.html
      * @return array $responseArray - The response array.
+     * @throws \triagens\ArangoDb\Exception
      */
     public static function listEndpoints(Connection $connection)
     {
         $response = $connection->get(Urls::URL_ENDPOINT);
 
-        $responseArray = $response->getJson();
-
-        return $responseArray;
+        return $response->getJson();
     }
 }

@@ -13,8 +13,6 @@ namespace triagens\ArangoDb;
 /**
  * Some helper methods to construct and process URLs
  *
- * <br />
- *
  * @package triagens\ArangoDb
  * @since   0.2
  */
@@ -34,13 +32,12 @@ abstract class UrlHelper
             return null;
         }
 
-        if (substr($location, 0, 5) === '/_db/') {
-           // /_db/<dbname>/_api/document/<collection>/<key>
-           @list(, , , , , , $id) = explode('/', $location);
-        }
-        else {
-           // /_api/document/<collection>/<key>
-          @list(, , , , $id) = explode('/', $location);
+        if (0 === strpos($location, '/_db/')) {
+            // /_db/<dbname>/_api/document/<collection>/<key>
+            @list(, , , , , , $id) = explode('/', $location);
+        } else {
+            // /_api/document/<collection>/<key>
+            @list(, , , , $id) = explode('/', $location);
         }
 
         if (is_string($id)) {
@@ -60,7 +57,7 @@ abstract class UrlHelper
      *
      * @return string - assembled URL
      */
-    public static function buildUrl($baseUrl, array $parts)
+    public static function buildUrl($baseUrl, array $parts = [])
     {
         $url = $baseUrl;
 
@@ -81,11 +78,15 @@ abstract class UrlHelper
      *
      * @return string - the assembled URL
      */
-    public static function appendParamsUrl($baseUrl, array $params)
+    public static function appendParamsUrl($baseUrl, $params)
     {
-        $url = $baseUrl . '?' . http_build_query($params);
+        foreach ($params as $key => &$value) {
+            if (is_bool($value)) {
+                $value = self::getBoolString($value);
+            }
+        }
 
-        return $url;
+        return $baseUrl . '?' . http_build_query($params);
     }
 
     /**

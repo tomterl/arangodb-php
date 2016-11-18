@@ -13,8 +13,6 @@ namespace triagens\ArangoDb;
 /**
  * Class TraceResponse
  *
- * <br />
- *
  * @author    Francis Chuang
  * @package   triagens\ArangoDb
  * @since     1.3
@@ -26,7 +24,7 @@ class TraceResponse
      *
      * @var array
      */
-    private $_headers = array();
+    private $_headers = [];
 
     /**
      * The http status code
@@ -47,7 +45,7 @@ class TraceResponse
      *
      * @var string
      */
-    private $_type = "response";
+    private $_type = 'response';
 
     /**
      * The time taken to send and receive a response in seconds
@@ -61,7 +59,7 @@ class TraceResponse
      *
      * @var array
      */
-    private $_httpCodeDefinitions = array(
+    private $_httpCodeDefinitions = [
         100 => 'Continue',
         101 => 'Switching Protocols',
         200 => 'OK',
@@ -103,7 +101,7 @@ class TraceResponse
         503 => 'Service Unavailable',
         504 => 'Gateway Timeout',
         505 => 'HTTP Version Not Supported',
-    );
+    ];
 
     /**
      * Set up the response trace
@@ -150,7 +148,7 @@ class TraceResponse
     public function getHttpCodeDefinition()
     {
         if (!isset($this->_httpCodeDefinitions[$this->getHttpCode()])) {
-            throw new ClientException("Invalid http code provided.");
+            throw new ClientException('Invalid http code provided.');
         }
 
         return $this->_httpCodeDefinitions[$this->getHttpCode()];

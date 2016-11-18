@@ -26,14 +26,14 @@ class Edge extends
      *
      * @var mixed
      */
-    protected $_from = null;
+    protected $_from;
 
     /**
      * The edge's to (might be NULL for new documents)
      *
      * @var mixed
      */
-    protected $_to = null;
+    protected $_to;
 
     /**
      * Document _from index
@@ -45,21 +45,6 @@ class Edge extends
      * Revision _to index
      */
     const ENTRY_TO = '_to';
-
-
-    /**
-     * Clone a document
-     *
-     * Returns the clone
-     *
-     * @return void
-     */
-    public function __clone()
-    {
-        $this->_id  = null;
-        $this->_rev = null;
-        // do not change the _changed flag here
-    }
 
 
     /**
@@ -87,32 +72,37 @@ class Edge extends
         if ($key[0] === '_') {
             if ($key === self::ENTRY_ID) {
                 $this->setInternalId($value);
+
                 return;
             }
 
             if ($key === self::ENTRY_KEY) {
                 $this->setInternalKey($value);
+
                 return;
             }
 
             if ($key === self::ENTRY_REV) {
                 $this->setRevision($value);
+
                 return;
             }
 
             if ($key === self::ENTRY_FROM) {
                 $this->setFrom($value);
+
                 return;
             }
 
             if ($key === self::ENTRY_TO) {
                 $this->setTo($value);
+
                 return;
             }
         }
 
-        if (! $this->_changed) {
-            if (! isset($this->_values[$key]) || $this->_values[$key] !== $value) {
+        if (!$this->_changed) {
+            if (!isset($this->_values[$key]) || $this->_values[$key] !== $value) {
                 // set changed flag
                 $this->_changed = true;
             }
@@ -122,26 +112,6 @@ class Edge extends
         $this->_values[$key] = $value;
     }
 
-
-    /**
-     * Get the 'from' vertex document-handler (if already known)
-     *
-     * @return mixed - document-handler
-     */
-    public function getFrom()
-    {
-        return $this->_from;
-    }
-
-    /**
-     * Get the 'to' vertex document-handler (if already known)
-     *
-     * @return mixed - document-handler
-     */
-    public function getTo()
-    {
-        return $this->_to;
-    }
 
     /**
      * Set the 'from' vertex document-handler
@@ -158,6 +128,16 @@ class Edge extends
     }
 
     /**
+     * Get the 'from' vertex document-handler (if already known)
+     *
+     * @return mixed - document-handler
+     */
+    public function getFrom()
+    {
+        return $this->_from;
+    }
+
+    /**
      * Set the 'to' vertex document-handler
      *
      * @param mixed $to - to vertex
@@ -170,4 +150,29 @@ class Edge extends
 
         return $this;
     }
+
+    /**
+     * Get the 'to' vertex document-handler (if already known)
+     *
+     * @return mixed - document-handler
+     */
+    public function getTo()
+    {
+        return $this->_to;
+    }
+
+    /**
+     * Get all document attributes for insertion/update
+     *
+     * @return mixed - associative array of all document attributes/values
+     */
+    public function getAllForInsertUpdate()
+    {
+        $data          = parent::getAllForInsertUpdate();
+        $data['_from'] = $this->_from;
+        $data['_to']   = $this->_to;
+
+        return $data;
+    }
+
 }

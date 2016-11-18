@@ -27,7 +27,7 @@ class Autoloader
      *
      * @var string
      */
-    private static $libDir = null;
+    private static $libDir;
 
     /**
      * Class file extension
@@ -44,7 +44,7 @@ class Autoloader
     {
         self::checkEnvironment();
 
-        self::$libDir = dirname(__FILE__) . DIRECTORY_SEPARATOR;
+        self::$libDir = __DIR__ . DIRECTORY_SEPARATOR;
 
         spl_autoload_register(__NAMESPACE__ . '\Autoloader::load');
     }
@@ -65,7 +65,8 @@ class Autoloader
         $namespace = __NAMESPACE__ . '\\';
         $length    = strlen($namespace);
 
-        if (substr($className, 0, $length) !== $namespace) {
+        //        if (substr($className, 0, $length) !== $namespace) {
+        if (0 !== strpos($className, $namespace)) {
             return;
         }
 
@@ -88,8 +89,8 @@ class Autoloader
     {
         list($major, $minor) = explode('.', phpversion());
 
-        if ((int) $major < 5 or ((int) $major === 5 && (int) $minor < 3)) {
-            throw new ClientException('Incompatible PHP environment. Expecting PHP 5.3 or higher');
+        if ((int) $major < 5 || ((int) $major === 5 && (int) $minor < 5)) {
+            throw new ClientException('Incompatible PHP environment. Expecting PHP 5.5 or higher');
         }
     }
 }

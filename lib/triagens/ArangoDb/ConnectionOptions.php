@@ -29,14 +29,14 @@ class ConnectionOptions implements
      *
      * @var array
      */
-    private $_values = array();
+    private $_values = [];
 
     /**
      * The connection endpoint object
      *
      * @var Endpoint
      */
-    private $_endpoint = null;
+    private $_endpoint;
 
     /**
      * Endpoint string index constant
@@ -62,6 +62,21 @@ class ConnectionOptions implements
      * Trace function index constant
      */
     const OPTION_TRACE = 'trace';
+
+    /**
+     * "verify certificates" index constant
+     */
+    const OPTION_VERIFY_CERT = 'verifyCert';
+
+    /**
+     * "allow self-signed" index constant
+     */
+    const OPTION_ALLOW_SELF_SIGNED = 'allowSelfSigned';
+
+    /**
+     * ciphers allowed to be used in SSL
+     */
+    const OPTION_CIPHERS = 'ciphers';
 
     /**
      * Enhanced trace
@@ -179,22 +194,12 @@ class ConnectionOptions implements
     const OPTION_CHECK_UTF8_CONFORM = 'CheckUtf8Conform';
 
     /**
-     * custom queue name
-     */
-    const OPTION_CUSTOM_QUEUE = 'customQueue';
-    
-    /**
-     * custom queue count
-     */
-    const OPTION_CUSTOM_QUEUE_COUNT = 'customQueueCount';
-
-    /**
      * Set defaults, use options provided by client and validate them
      *
      *
      * @param array $options - initial options
      *
-     * @return \triagens\ArangoDb\ConnectionOptions
+     * @throws \triagens\ArangoDb\ClientException
      */
     public function __construct(array $options)
     {
@@ -296,7 +301,7 @@ class ConnectionOptions implements
      */
     private static function getDefaults()
     {
-        return array(
+        return [
             self::OPTION_ENDPOINT           => null,
             self::OPTION_HOST               => null,
             self::OPTION_PORT               => DefaultValues::DEFAULT_PORT,
@@ -314,6 +319,9 @@ class ConnectionOptions implements
             self::OPTION_CONNECTION         => DefaultValues::DEFAULT_CONNECTION,
             self::OPTION_TRACE              => null,
             self::OPTION_ENHANCED_TRACE     => false,
+            self::OPTION_VERIFY_CERT        => DefaultValues::DEFAULT_VERIFY_CERT,
+            self::OPTION_ALLOW_SELF_SIGNED  => DefaultValues::DEFAULT_ALLOW_SELF_SIGNED,
+            self::OPTION_CIPHERS            => DefaultValues::DEFAULT_CIPHERS,
             self::OPTION_AUTH_USER          => null,
             self::OPTION_AUTH_PASSWD        => null,
             self::OPTION_AUTH_TYPE          => null,
@@ -321,10 +329,8 @@ class ConnectionOptions implements
             self::OPTION_BATCH              => false,
             self::OPTION_BATCHPART          => false,
             self::OPTION_DATABASE           => '_system',
-            self::OPTION_CHECK_UTF8_CONFORM => DefaultValues::DEFAULT_CHECK_UTF8_CONFORM,
-            self::OPTION_CUSTOM_QUEUE       => null,
-            self::OPTION_CUSTOM_QUEUE_COUNT => null
-        );
+            self::OPTION_CHECK_UTF8_CONFORM => DefaultValues::DEFAULT_CHECK_UTF8_CONFORM
+        ];
     }
 
     /**
@@ -334,7 +340,7 @@ class ConnectionOptions implements
      */
     private static function getSupportedAuthTypes()
     {
-        return array('Basic');
+        return ['Basic'];
     }
 
     /**
@@ -344,7 +350,7 @@ class ConnectionOptions implements
      */
     private static function getSupportedConnectionTypes()
     {
-        return array('Close', 'Keep-Alive');
+        return ['Close', 'Keep-Alive'];
     }
 
     /**
@@ -364,7 +370,7 @@ class ConnectionOptions implements
         }
 
         // can use either endpoint or host/port
-        if (isset($this->_values[self::OPTION_HOST]) && isset($this->_values[self::OPTION_ENDPOINT])) {
+        if (isset($this->_values[self::OPTION_HOST], $this->_values[self::OPTION_ENDPOINT])) {
             throw new ClientException('must not specify both host and endpoint');
         } else {
             if (isset($this->_values[self::OPTION_HOST]) && !isset($this->_values[self::OPTION_ENDPOINT])) {
@@ -373,17 +379,21 @@ class ConnectionOptions implements
             }
         }
 
-        assert(isset($this->_values[self::OPTION_ENDPOINT]));
         // set up a new endpoint, this will also validate it
         $this->getEndpoint();
-        if (Endpoint::getType($this->_values[self::OPTION_ENDPOINT]) === Endpoint::TYPE_UNIX) {
-            // must set port to 0 for UNIX sockets
+
+        $type = Endpoint::getType($this->_values[self::OPTION_ENDPOINT]);
+        if ($type === Endpoint::TYPE_UNIX) {
+            // must set port to 0 for UNIX domain sockets
+            $this->_values[self::OPTION_PORT] = 0;
+        } elseif ($type === Endpoint::TYPE_SSL) {
+            // must set port to 0 for SSL connections
             $this->_values[self::OPTION_PORT] = 0;
         }
 
         if (isset($this->_values[self::OPTION_AUTH_TYPE]) && !in_array(
                 $this->_values[self::OPTION_AUTH_TYPE],
-                self::getSupportedAuthTypes()
+                self::getSupportedAuthTypes(), true
             )
         ) {
             throw new ClientException('unsupported authorization method');
@@ -391,13 +401,15 @@ class ConnectionOptions implements
 
         if (isset($this->_values[self::OPTION_CONNECTION]) && !in_array(
                 $this->_values[self::OPTION_CONNECTION],
-                self::getSupportedConnectionTypes()
+                self::getSupportedConnectionTypes(), true
             )
         ) {
-            throw new ClientException(sprintf(
-                                          "unsupported connection value '%s'",
-                                          $this->_values[self::OPTION_CONNECTION]
-                                      ));
+            throw new ClientException(
+                sprintf(
+                    "unsupported connection value '%s'",
+                    $this->_values[self::OPTION_CONNECTION]
+                )
+            );
         }
 
         UpdatePolicy::validate($this->_values[self::OPTION_UPDATE_POLICY]);
